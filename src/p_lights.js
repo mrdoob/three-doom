@@ -37,7 +37,7 @@ function P_FindMinSurroundingLight(sec, defaultMin) {
 // FireFlicker (sector special 17).
 export function T_FireFlicker(thinker) {
   const f = thinker.__flick;
-  if (--f.count > 0) return;
+  if (--f.count !== 0) return;
   // p_lights.c T_FireFlicker: amount = (P_Random()&3)*16
   const amount = (P_Random() & 3) * 16;
   f.sector.lightlevel = (f.sector.lightlevel - amount < f.minlight) ? f.minlight : (f.maxlight - amount);
@@ -56,7 +56,7 @@ export function P_SpawnFireFlicker(sector) {
 // LightFlash (sector special 1: random flicker).
 export function T_LightFlash(thinker) {
   const f = thinker.__flash;
-  if (--f.count > 0) return;
+  if (--f.count !== 0) return;
   // p_lights.c T_LightFlash: count = (P_Random() & {min,max}time) + 1
   if (f.sector.lightlevel === f.maxlight) {
     f.sector.lightlevel = f.minlight;
@@ -82,7 +82,7 @@ export function P_SpawnLightFlash(sector) {
 export const SLOWDARK = 35, FASTDARK = 15, STROBEBRIGHT = 5;
 export function T_StrobeFlash(thinker) {
   const f = thinker.__strobe;
-  if (--f.count > 0) return;
+  if (--f.count !== 0) return;
   if (f.sector.lightlevel === f.minlight) {
     f.sector.lightlevel = f.maxlight; f.count = f.brighttime;
   } else {
