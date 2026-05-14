@@ -67,6 +67,40 @@ export function I_ShutdownSound() {
   if (_ctx !== null) { _ctx.close(); _ctx = null; }
 }
 
+// i_sound.c surface area expected by s_sound.c. Web Audio mixes natively,
+// so the channel-allocation builder, master volume setter, and music-status
+// probe are mostly nops/thin shims, but every name must exist as an export
+// or s_sound's wiring breaks at module-load time.
+
+// i_sound.c:I_GetSfxLumpNum — returns the WAD lump index for an sfx.
+// s_sound uses this to precache / locate sound data.
+export function I_GetSfxLumpNum(sfx) {
+  if (sfx === null || sfx === undefined) return -1;
+  const name = (sfx.name !== undefined) ? sfx.name : String(sfx);
+  return W_CheckNumForName('DS' + name.toUpperCase());
+}
+
+// i_sound.c:I_SetChannels — builds steptable / vol_lookup for the software
+// mixer. Web Audio handles mixing/pan; nothing to precompute here.
+export function I_SetChannels() {}
+
+// i_sound.c:I_SetSfxVolume / I_SetMusicVolume. Master SFX gain is applied
+// per-source from S_AdjustSoundParams, so the setter just remembers the
+// value (s_sound reads snd_SfxVolume directly).
+export function I_SetSfxVolume(_vol) {}
+
+// i_sound.c:I_QrySongPlaying — DMX returned the playing music handle or 0.
+export function I_QrySongPlaying(_handle) {
+  return _musicScore !== null;
+}
+
+// i_sound.c init/shutdown for the music subsystem. Web Audio doesn't need
+// separate music init.
+export function I_InitMusic() {}
+export function I_ShutdownMusic() {
+  if (_musicTimer !== null) { clearInterval(_musicTimer); _musicTimer = null; }
+}
+
 // `id` is sfx_xxx index into _sfxInfo. vol 0..127, sep 0..255 (stereo), pitch
 // is pitch shift in 1/64 semitones — Doom uses 128 as "normal".
 // Returns a handle (used by I_StopSound to cancel).
