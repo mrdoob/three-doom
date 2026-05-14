@@ -5,13 +5,14 @@
 // flashy attacks (Vile resurrect, Mancubus fireball spread, etc.) are TODO.
 
 import { P_RegisterAction, states, mobjinfo, actionRegistry } from './info.js';
-import { P_SetMobjState, MF_SHOOTABLE, MF_AMBUSH, MF_JUSTHIT, MF_JUSTATTACKED, MF_SOLID, MF_SKULLFLY, P_SpawnMissile, P_SpawnMobj, P_SpawnPuff } from './p_mobj.js';
+import { P_SetMobjState, MF_SHOOTABLE, MF_AMBUSH, MF_JUSTHIT, MF_JUSTATTACKED, MF_SOLID, MF_SKULLFLY, P_SpawnMissile, P_SpawnMobj, P_SpawnPuff, P_RemoveMobj } from './p_mobj.js';
+import { P_TeleportMove } from './p_map.js';
 import { players, consoleplayer, playeringame, gameepisode, gamemap, gamemode, gameskill, gametic } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
 import { ANGLETOFINESHIFT, FINEMASK, finecosine, finesine } from './tables.js';
 import { P_CheckSight } from './p_sight.js';
 import { R_PointToAngle2 } from './r_bsp.js';
-import { MT_BRUISER, MT_CYBORG, MT_SPIDER, MT_HEADSHOT, MT_TROOPSHOT, MT_BRUISERSHOT, MT_FATSO, MT_FATSHOT, MT_VILE, MT_UNDEAD, MT_FIRE, MT_TRACER, MT_SKULL, MT_BABY, MT_PAIN, MT_BOSSBRAIN, MT_BOSSSPIT, MT_BOSSTARGET, MT_SPAWNSHOT, MT_SPAWNFIRE, MT_ROCKET, MT_ARACHPLAZ } from './info.js';
+import { MT_BRUISER, MT_CYBORG, MT_SPIDER, MT_HEADSHOT, MT_TROOPSHOT, MT_BRUISERSHOT, MT_FATSO, MT_FATSHOT, MT_VILE, MT_UNDEAD, MT_FIRE, MT_TRACER, MT_SKULL, MT_BABY, MT_PAIN, MT_BOSSBRAIN, MT_BOSSSPIT, MT_BOSSTARGET, MT_SPAWNSHOT, MT_SPAWNFIRE, MT_ROCKET, MT_ARACHPLAZ, MT_TROOP, MT_SERGEANT, MT_SHADOWS, MT_HEAD, MT_KNIGHT } from './info.js';
 import { sfx_claw } from './sounds.js';
 import { EV_DoFloor, lowerFloorToLowest } from './p_floor.js';
 import { P_Random } from './m_random.js';
@@ -887,12 +888,38 @@ P_RegisterAction('A_SpawnFly', (mo) => {
   // C: `if (--mo->reactiontime) return;` — returns on any nonzero result.
   if (--mo.reactiontime !== 0) return;
   const targ = mo.target;
-  if (targ === null || typeof globalThis.__P_SpawnMobj !== 'function') return;
-  const fog = globalThis.__P_SpawnMobj(targ.x, targ.y, targ.z, MT_SPAWNFIRE);
-  if (fog !== null && _S !== null) _S.S_StartSound(fog, 35 /*sfx_telept*/);
-  // Random spawn: pick from spawn table by probability. Vanilla uses a static
-  // distribution; we pick MT_TROOP as a sane default.
-  globalThis.__P_SpawnMobj(targ.x, targ.y, targ.z, 2 /*MT_TROOP*/);
+  if (targ === null || targ === undefined) return;
+
+  // First spawn teleport fog at the destination.
+  const fog = P_SpawnMobj(targ.x, targ.y, targ.z, MT_SPAWNFIRE);
+  if (fog !== null && fog !== undefined && _S !== null) _S.S_StartSound(fog, 35 /*sfx_telept*/);
+
+  // Random monster selection with the C probability distribution.
+  const r = P_Random();
+  let type;
+  if      (r < 50)  type = MT_TROOP;
+  else if (r < 90)  type = MT_SERGEANT;
+  else if (r < 120) type = MT_SHADOWS;
+  else if (r < 130) type = MT_PAIN;
+  else if (r < 160) type = MT_HEAD;
+  else if (r < 162) type = MT_VILE;
+  else if (r < 172) type = MT_UNDEAD;
+  else if (r < 192) type = MT_BABY;
+  else if (r < 222) type = MT_FATSO;
+  else if (r < 246) type = MT_KNIGHT;
+  else              type = MT_BRUISER;
+
+  const newmobj = P_SpawnMobj(targ.x, targ.y, targ.z, type);
+  if (newmobj !== null && newmobj !== undefined) {
+    if (P_LookForPlayers(newmobj, true) === true) {
+      P_SetMobjState(newmobj, newmobj.info.seestate);
+    }
+    // Telefrag anything occupying the destination.
+    P_TeleportMove(newmobj, newmobj.x, newmobj.y);
+  }
+
+  // Remove the cube.
+  P_RemoveMobj(mo);
 });
 P_RegisterAction('A_SpawnSound', (mo) => {
   if (_S !== null) _S.S_StartSound(mo, 95 /*sfx_boscub*/);
