@@ -5,8 +5,8 @@
 // flashy attacks (Vile resurrect, Mancubus fireball spread, etc.) are TODO.
 
 import { P_RegisterAction, states, mobjinfo, actionRegistry } from './info.js';
-import { P_SetMobjState, MF_SHOOTABLE, MF_AMBUSH, MF_JUSTHIT, MF_JUSTATTACKED, MF_SOLID, MF_SKULLFLY, P_SpawnMissile } from './p_mobj.js';
-import { players, consoleplayer, playeringame, gameepisode, gamemap, gamemode, gameskill } from './doomstat.js';
+import { P_SetMobjState, MF_SHOOTABLE, MF_AMBUSH, MF_JUSTHIT, MF_JUSTATTACKED, MF_SOLID, MF_SKULLFLY, P_SpawnMissile, P_SpawnMobj, P_SpawnPuff } from './p_mobj.js';
+import { players, consoleplayer, playeringame, gameepisode, gamemap, gamemode, gameskill, gametic } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
 import { ANGLETOFINESHIFT, FINEMASK, finecosine, finesine } from './tables.js';
 import { P_CheckSight } from './p_sight.js';
@@ -592,24 +592,51 @@ P_RegisterAction('A_SkelFist', (a) => {
   const dmg = (P_Random() % 10 + 1) * 6;
   if (_PInter !== null) _PInter.P_DamageMobj(a.target, a, a, dmg);
 });
+// p_enemy.c:1019 — TRACEANGLE ~ 11.25° per 4 tics (vanilla update gate).
+const TRACEANGLE = 0x0c000000;
 P_RegisterAction('A_Tracer', (actor) => {
-  // Vanilla updates every 4 tics (gametic & 3). Without a global tic counter
-  // here we just always update — slightly tighter homing but functionally
-  // equivalent in single-player.
+  // Vanilla updates every 4 tics — gametic & 3 returns true 3 of 4 tics.
+  if ((gametic & 3) !== 0) return;
+
+  // Spawn a puff of smoke at the missile head and a tracer-smoke trail behind.
+  P_SpawnPuff(actor.x, actor.y, actor.z);
+  const th = P_SpawnMobj(actor.x - actor.momx, actor.y - actor.momy, actor.z, 7 /*MT_SMOKE*/);
+  if (th !== null && th !== undefined) {
+    th.momz = 65536; // FRACUNIT
+    th.tics -= P_Random() & 3;
+    if (th.tics < 1) th.tics = 1;
+  }
+
   const dest = actor.tracer;
   if (dest === null || dest === undefined) return;
   if (dest.health <= 0) return;
-  // Adjust angle toward the target. Vanilla A_Tracer uses R_PointToAngle2 →
-  // tantoangle LUT so the homing curve is demo-deterministic.
-  const aimBAM = R_PointToAngle2(actor.x, actor.y, dest.x, dest.y);
-  const diff = (aimBAM - actor.angle) | 0; // signed BAM step
-  // p_enemy.c:1019 TRACEANGLE = 0xc000000 (~11.25° per 4 tics — vanilla update gate).
-  const turn = 0x0c000000;
-  if (diff > 0)      actor.angle = (actor.angle + Math.min(diff,  turn)) >>> 0;
-  else if (diff < 0) actor.angle = (actor.angle + Math.max(diff, -turn)) >>> 0;
+
+  // Adjust angle toward the target using R_PointToAngle2 + tantoangle so the
+  // homing curve is demo-deterministic. Compare with the unsigned-32 wrap
+  // trick from the C source: if exact-angle > 0x80000000, the short way is
+  // backward (decrement); else forward.
+  const exact = R_PointToAngle2(actor.x, actor.y, dest.x, dest.y) >>> 0;
+  if (exact !== actor.angle) {
+    if (((exact - actor.angle) >>> 0) > 0x80000000) {
+      actor.angle = (actor.angle - TRACEANGLE) >>> 0;
+      if (((exact - actor.angle) >>> 0) < 0x80000000) actor.angle = exact;
+    } else {
+      actor.angle = (actor.angle + TRACEANGLE) >>> 0;
+      if (((exact - actor.angle) >>> 0) > 0x80000000) actor.angle = exact;
+    }
+  }
+
   const fa = (actor.angle >>> ANGLETOFINESHIFT) & FINEMASK;
   actor.momx = ((actor.info.speed * finecosine[fa]) / 65536) | 0;
   actor.momy = ((actor.info.speed * finesine[fa])   / 65536) | 0;
+
+  // Change slope (vertical homing).
+  let dist = distApprox(dest.x - actor.x, dest.y - actor.y);
+  dist = (dist / actor.info.speed) | 0;
+  if (dist < 1) dist = 1;
+  const slope = ((dest.z + 40 * 65536 - actor.z) / dist) | 0;
+  if (slope < actor.momz) actor.momz -= 65536 / 8;
+  else                    actor.momz += 65536 / 8;
 });
 
 // Mancubus (MT_FATSO).
