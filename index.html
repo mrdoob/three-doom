@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Three-Doom</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; color: #fff; font-family: monospace; overflow: hidden; }
+  #container { position: fixed; inset: 0; }
+  #overlay { position: fixed; inset: 0; pointer-events: none; }
+  #status { position: fixed; left: 8px; top: 8px; font: 12px monospace; color: #ff8; background: rgba(0,0,0,0.5); padding: 4px 8px; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="container"></div>
+<canvas id="overlay"></canvas>
+<div id="status">Three-Doom</div>
+<script type="module" src="./src/i_main.js"></script>
+</body>
+</html>
