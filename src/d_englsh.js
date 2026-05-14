@@ -153,7 +153,62 @@ export const HUSTR_E3M7 = 'E3M7: Limbo';
 export const HUSTR_E3M8 = 'E3M8: Dis';
 export const HUSTR_E3M9 = 'E3M9: Warrens';
 
-// --- f_finale.c — episode ending text (re-exports of strings already in f_finale.js) ---
+// --- Ultimate Doom episode 4 ---
+export const HUSTR_E4M1 = 'E4M1: Hell Beneath';
+export const HUSTR_E4M2 = 'E4M2: Perfect Hatred';
+export const HUSTR_E4M3 = 'E4M3: Sever The Wicked';
+export const HUSTR_E4M4 = 'E4M4: Unruly Evil';
+export const HUSTR_E4M5 = 'E4M5: They Will Repent';
+export const HUSTR_E4M6 = 'E4M6: Against Thee Wickedly';
+export const HUSTR_E4M7 = 'E4M7: And Hell Followed';
+export const HUSTR_E4M8 = 'E4M8: Unto The Cruel';
+export const HUSTR_E4M9 = 'E4M9: Fear';
+
+// --- Doom 2 level titles ---
+export const HUSTR_1  = "level 1: entryway";
+export const HUSTR_2  = "level 2: underhalls";
+export const HUSTR_3  = "level 3: the gantlet";
+export const HUSTR_4  = "level 4: the focus";
+export const HUSTR_5  = "level 5: the waste tunnels";
+export const HUSTR_6  = "level 6: the crusher";
+export const HUSTR_7  = "level 7: dead simple";
+export const HUSTR_8  = "level 8: tricks and traps";
+export const HUSTR_9  = "level 9: the pit";
+export const HUSTR_10 = "level 10: refueling base";
+export const HUSTR_11 = "level 11: 'o' of destruction!";
+export const HUSTR_12 = "level 12: the factory";
+export const HUSTR_13 = "level 13: downtown";
+export const HUSTR_14 = "level 14: the inmost dens";
+export const HUSTR_15 = "level 15: industrial zone";
+export const HUSTR_16 = "level 16: suburbs";
+export const HUSTR_17 = "level 17: tenements";
+export const HUSTR_18 = "level 18: the courtyard";
+export const HUSTR_19 = "level 19: the citadel";
+export const HUSTR_20 = "level 20: gotcha!";
+export const HUSTR_21 = "level 21: nirvana";
+export const HUSTR_22 = "level 22: the catacombs";
+export const HUSTR_23 = "level 23: barrels o' fun";
+export const HUSTR_24 = "level 24: the chasm";
+export const HUSTR_25 = "level 25: bloodfalls";
+export const HUSTR_26 = "level 26: the abandoned mines";
+export const HUSTR_27 = "level 27: monster condo";
+export const HUSTR_28 = "level 28: the spirit world";
+export const HUSTR_29 = "level 29: the living end";
+export const HUSTR_30 = "level 30: icon of sin";
+export const HUSTR_31 = "level 31: wolfenstein";
+export const HUSTR_32 = "level 32: grosse";
+
+// --- Multiplayer player names + chat keys ---
+export const HUSTR_PLRGREEN  = 'Green: ';
+export const HUSTR_PLRINDIGO = 'Indigo: ';
+export const HUSTR_PLRBROWN  = 'Brown: ';
+export const HUSTR_PLRRED    = 'Red: ';
+export const HUSTR_KEYGREEN  = 'g';
+export const HUSTR_KEYINDIGO = 'i';
+export const HUSTR_KEYBROWN  = 'b';
+export const HUSTR_KEYRED    = 'r';
+
+// --- f_finale.c — episode ending text ---
 export const E1TEXT =
   "Once you beat the big badasses and\nclean out the moon base you're supposed\n" +
   "to win, aren't you? Aren't you? Where's\nyour fat reward and ticket home? What\n" +
@@ -162,6 +217,98 @@ export const E1TEXT =
   "you're stuck on The Shores of Hell.\nThe only way out is through.\n\n" +
   "To continue the DOOM experience, play\nThe Shores of Hell and its amazing\n" +
   "sequel, Inferno!\n";
+
+export const E2TEXT =
+  "You've done it! The hideous cyber-\ndemon lord that ruled the lost Deimos\n" +
+  "moon base has been slain and you\nare triumphant! But ... where are\n" +
+  "you? You clamber to the edge of the\nmoon and look down to see the awful\n" +
+  "truth.\n\n" +
+  "Deimos floats above Hell itself!\nYou've never heard of anyone escaping\n" +
+  "from Hell, but you'll make the bastards\nsorry they ever heard of you! Quickly,\n" +
+  "you rappel down to  the surface of\nHell.\n\n" +
+  "Now, it's on to the final chapter of\nDOOM! -- Inferno.";
+
+export const E3TEXT =
+  "The loathsome spiderdemon that\nmasterminded the invasion of the moon\n" +
+  "bases and caused so much death has had\nits ass kicked for all time.\n\n" +
+  "A hidden doorway opens and you enter.\nYou've proven too tough for Hell to\n" +
+  "contain, and now Hell at last plays\nfair -- for you emerge from the door\n" +
+  "to see the green fields of Earth!\nHome at last.\n\n" +
+  "You wonder what's been happening on\nEarth while you were battling evil\n" +
+  "unleashed. It's good that no Hell-\nspawn could have come through that\n" +
+  "door with you ...";
+
+export const E4TEXT =
+  "the spider mastermind must have sent forth\nits legions of hellspawn before your\n" +
+  "final confrontation with that terrible\nbeast from hell.  but you stepped forward\n" +
+  "and brought forth eternal damnation and\nsuffering upon the horde as a true hero\n" +
+  "would in the face of something so evil.\n\n" +
+  "besides, someone was gonna pay for what\nhappened to daisy, your pet rabbit.\n\n" +
+  "but now, you see spread before you more\npotential pain and gibbitude as a nation\n" +
+  "of demons run amok among our cities.\n\n" +
+  "next stop, hell on earth!";
+
+// Doom 2 finale (between chapters of MAP01-30).
+export const C1TEXT =
+  "YOU HAVE ENTERED DEEPLY INTO THE INFESTED\nSTARPORT. BUT SOMETHING IS WRONG. THE\n" +
+  "MONSTERS HAVE BROUGHT THEIR OWN REALITY\nWITH THEM, AND THE STARPORT'S TECHNOLOGY\n" +
+  "IS BEING SUBVERTED BY THEIR PRESENCE.\n\n" +
+  "AHEAD, YOU SEE AN OUTPOST OF HELL, A\nFORTIFIED ZONE. IF YOU CAN GET PAST IT,\n" +
+  "YOU CAN PENETRATE INTO THE HAUNTED HEART\nOF THE STARBASE AND FIND THE CONTROLLING\n" +
+  "SWITCH WHICH HOLDS EARTH'S POPULATION\nHOSTAGE.";
+
+export const C2TEXT =
+  "YOU HAVE WON! YOUR VICTORY HAS ENABLED\nHUMANKIND TO EVACUATE EARTH AND ESCAPE\n" +
+  "THE NIGHTMARE.  NOW YOU ARE THE ONLY\nHUMAN LEFT ON THE FACE OF THE PLANET.\n" +
+  "CANNIBAL MUTATIONS, CARNIVOROUS ALIENS,\nAND EVIL SPIRITS ARE YOUR ONLY NEIGHBORS.\n" +
+  "YOU SIT BACK AND WAIT FOR DEATH, CONTENT\nTHAT YOU HAVE SAVED YOUR SPECIES.\n\n" +
+  "BUT THEN, EARTH CONTROL BEAMS DOWN A\nMESSAGE FROM SPACE: \"SENSORS HAVE LOCATED\n" +
+  "THE SOURCE OF THE ALIEN INVASION. IF YOU\nGO THERE, YOU MAY BE ABLE TO BLOCK THEIR\n" +
+  "ENTRY.  THE ALIEN BASE IS IN THE HEART OF\nYOUR OWN HOME CITY, NOT FAR FROM THE\n" +
+  "STARPORT.\" SLOWLY AND PAINFULLY YOU GET\nUP AND RETURN TO THE FRAY.";
+
+export const C3TEXT =
+  "YOU ARE AT THE CORRUPT HEART OF THE CITY,\nSURROUNDED BY THE CORPSES OF YOUR ENEMIES.\n" +
+  "YOU SEE NO WAY TO DESTROY THE CREATURES'\nENTRYWAY ON THIS SIDE, SO YOU CLENCH YOUR\n" +
+  "TEETH AND PLUNGE THROUGH IT.\n\n" +
+  "THERE MUST BE A WAY TO CLOSE IT ON THE\nOTHER SIDE. WHAT DO YOU CARE IF YOU'VE\n" +
+  "GOT TO GO THROUGH HELL TO GET TO IT?";
+
+export const C4TEXT =
+  "THE HORRENDOUS VISAGE OF THE BIGGEST\nDEMON YOU'VE EVER SEEN CRUMBLES BEFORE\n" +
+  "YOU, AFTER YOU PUMP YOUR ROCKETS INTO\nHIS EXPOSED BRAIN. THE MONSTER SHRIVELS\n" +
+  "UP AND DIES, ITS THRASHING LIMBS\nDEVASTATING UNTOLD MILES OF HELL'S\n" +
+  "SURFACE.\n\n" +
+  "YOU'VE DONE IT. THE INVASION IS OVER.\nEARTH IS SAVED. HELL IS A WRECK. YOU\n" +
+  "WONDER WHERE BAD FOLKS WILL GO WHEN THEY\nDIE, NOW. WIPING THE SWEAT FROM YOUR\n" +
+  "FOREHEAD YOU BEGIN THE LONG TREK BACK\nHOME. REBUILDING EARTH OUGHT TO BE A\n" +
+  "LOT MORE FUN THAN RUINING IT WAS.\n";
+
+export const C5TEXT =
+  "CONGRATULATIONS, YOU'VE FOUND THE SECRET\nLEVEL! LOOKS LIKE IT'S BEEN BUILT BY\n" +
+  "HUMANS, RATHER THAN DEMONS. YOU WONDER\nWHO THE INMATES OF THIS CORNER OF HELL\nWILL BE.";
+
+export const C6TEXT =
+  "CONGRATULATIONS, YOU'VE FOUND THE\nSUPER SECRET LEVEL!  YOU'D BETTER\nBLAZE THROUGH THIS ONE!\n";
+
+// Character cast strings (f_finale.c).
+export const CC_ZOMBIE  = 'ZOMBIEMAN';
+export const CC_SHOTGUN = 'SHOTGUN GUY';
+export const CC_HEAVY   = 'HEAVY WEAPON DUDE';
+export const CC_IMP     = 'IMP';
+export const CC_DEMON   = 'DEMON';
+export const CC_LOST    = 'LOST SOUL';
+export const CC_CACO    = 'CACODEMON';
+export const CC_HELL    = 'HELL KNIGHT';
+export const CC_BARON   = 'BARON OF HELL';
+export const CC_ARACH   = 'ARACHNOTRON';
+export const CC_PAIN    = 'PAIN ELEMENTAL';
+export const CC_REVEN   = 'REVENANT';
+export const CC_MANCU   = 'MANCUBUS';
+export const CC_ARCH    = 'ARCH-VILE';
+export const CC_SPIDER  = 'THE SPIDER MASTERMIND';
+export const CC_CYBER   = 'THE CYBERDEMON';
+export const CC_HERO    = 'OUR HERO';
 
 // --- Cheats (vanilla scramble-obfuscated; we expose the plaintext sequences) ---
 export const IDDQD    = 'iddqd';
