@@ -358,10 +358,12 @@ async function fetchWad(path, mode) {
 
 export async function D_DoomMain() {
   // Command-line equivalents (URL params): -devparm, -nomonsters, -respawn, -fast.
-  if (M_CheckParm('-devparm'))    set_devparm(true);
-  if (M_CheckParm('-nomonsters')) set_nomonsters(true);
-  if (M_CheckParm('-respawn'))    set_respawnparm(true);
-  if (M_CheckParm('-fast'))       set_fastparm(true);
+  // M_CheckParm returns 0 when absent (argv[0] is reserved); use explicit
+  // !== 0 per Golden Rule 2 (no falsy checks on numeric-valid-zero data).
+  if (M_CheckParm('-devparm')    !== 0) set_devparm(true);
+  if (M_CheckParm('-nomonsters') !== 0) set_nomonsters(true);
+  if (M_CheckParm('-respawn')    !== 0) set_respawnparm(true);
+  if (M_CheckParm('-fast')       !== 0) set_fastparm(true);
 
   // Locate and load the IWAD.
   const iwad = await findIwad();
