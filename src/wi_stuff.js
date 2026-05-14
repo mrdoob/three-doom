@@ -4,10 +4,38 @@
 //   ShowNextLoc — "Entering …" with the level-name patch.
 // Player presses a key to skip ahead; auto-advances after configured wait.
 
-import { gameepisode, gamemap, players, consoleplayer } from './doomstat.js';
+import { gameepisode, gamemap, gamemode, players, consoleplayer } from './doomstat.js';
 import { S_StartSound } from './s_sound.js';
+import { GameMode_t } from './doomdef.js';
 
 const TICRATE = 35;
+
+// g_game.c:978 — Doom 1 par times indexed [episode][map]. The episode-0 row
+// is unused; episodes 1..3 fill maps 1..9. Episode 4 (Ultimate Doom) has no
+// canonical par times and uses 0.
+export const pars = [
+  [0],
+  [0, 30, 75, 120, 90, 165, 180, 180, 30, 165],
+  [0, 90, 90,  90, 120, 90, 360, 240, 30, 170],
+  [0, 90, 45,  90, 150, 90,  90, 165, 30, 135],
+];
+
+// g_game.c:987 — Doom 2 par times indexed [map-1], maps 1..32.
+export const cpars = [
+   30, 90,120,120, 90,150,120,120,270, 90,  //  1-10
+  210,150,150,150,210,150,420,150,210,150,  // 11-20
+  240,150,180,150,150,300,330,420,300,180,  // 21-30
+  120, 30,                                  // 31-32
+];
+
+// Look up the par time for the just-finished map.
+function _parTimeFor(ep, map) {
+  if (gamemode === GameMode_t.commercial) {
+    return (map >= 1 && map <= 32) ? cpars[map - 1] : 0;
+  }
+  if (ep >= 1 && ep <= 3 && map >= 1 && map <= 9) return pars[ep][map];
+  return 0;
+}
 
 // Phases — match vanilla `stateenum_t` (we add `Done`).
 const Ph = { StatCount: 0, ShowNextLoc: 1, Done: 2 };
@@ -41,12 +69,17 @@ export function WI_Start(wbstartstruct, onDone) {
   // ?? not || — Doom permits 0 for partime / maxkills / etc. (a level with
   // zero secrets is legal, and `|| 100` would wrongly substitute 100).
   _wbs.plyr      = _wbs.plyr      ?? [{ skills: 0, sitems: 0, ssecret: 0, stime: 0 }];
-  _wbs.maxkills  = _wbs.maxkills  ?? 100;
-  _wbs.maxitems  = _wbs.maxitems  ?? 100;
-  _wbs.maxsecret = _wbs.maxsecret ?? 100;
-  _wbs.partime   = _wbs.partime   ?? 60;
+  _wbs.maxkills  = _wbs.maxkills  ?? 0;
+  _wbs.maxitems  = _wbs.maxitems  ?? 0;
+  _wbs.maxsecret = _wbs.maxsecret ?? 0;
+  _wbs.epsd      = _wbs.epsd      ?? gameepisode;
   _wbs.last      = _wbs.last      ?? gamemap;
   _wbs.next      = _wbs.next      ?? gamemap + 1;
+  // wminfo.partime defaults from the canonical pars[][]/cpars[] tables when
+  // g_game hasn't populated it (or supplied a 0, which means "no par").
+  if (_wbs.partime === undefined || _wbs.partime === null) {
+    _wbs.partime = _parTimeFor(_wbs.epsd, _wbs.last);
+  }
   _onDone   = onDone || (() => {});
   _phase    = Ph.StatCount; _phaseTic = 0;
   _cntKills = _cntItems = _cntSecret = _cntTime = _cntPar = 0;
@@ -62,19 +95,29 @@ function rampTo(target, tic) {
   return ((target * tic) / STAT_RAMP_TICS) | 0;
 }
 
+// wi_stuff.c shows pct = (count * 100) / max. Match vanilla so a 50%
+// finish reads as 50, not the raw kill count.
+function _pct(count, max) {
+  if (max <= 0) return 0;
+  return ((count * 100) / max) | 0;
+}
+
 function WI_updateStats() {
   const p = _wbs.plyr[0];
+  const tgtK = _pct(p.skills,  _wbs.maxkills);
+  const tgtI = _pct(p.sitems,  _wbs.maxitems);
+  const tgtS = _pct(p.ssecret, _wbs.maxsecret);
   _stageTic++;
   if (_cntStage === 0) {
-    _cntKills = rampTo(p.skills, _stageTic);
-    if (_stageTic % 3 === 0 && !_tickedSound) S_StartSound(null, 1 /*sfx_pistol*/);
-    if (_stageTic >= STAT_RAMP_TICS) { _cntKills = p.skills; _cntStage = 1; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/); }
+    _cntKills = rampTo(tgtK, _stageTic);
+    if (_stageTic % 3 === 0 && _tickedSound === false) S_StartSound(null, 1 /*sfx_pistol*/);
+    if (_stageTic >= STAT_RAMP_TICS) { _cntKills = tgtK; _cntStage = 1; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/); }
   } else if (_cntStage === 1) {
-    _cntItems = rampTo(p.sitems, _stageTic);
-    if (_stageTic >= STAT_RAMP_TICS) { _cntItems = p.sitems; _cntStage = 2; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/); }
+    _cntItems = rampTo(tgtI, _stageTic);
+    if (_stageTic >= STAT_RAMP_TICS) { _cntItems = tgtI; _cntStage = 2; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/); }
   } else if (_cntStage === 2) {
-    _cntSecret = rampTo(p.ssecret, _stageTic);
-    if (_stageTic >= STAT_RAMP_TICS) { _cntSecret = p.ssecret; _cntStage = 3; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/); }
+    _cntSecret = rampTo(tgtS, _stageTic);
+    if (_stageTic >= STAT_RAMP_TICS) { _cntSecret = tgtS; _cntStage = 3; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/); }
   } else if (_cntStage === 3) {
     _cntTime = rampTo(((p.stime / 35) | 0), _stageTic);
     _cntPar  = rampTo(_wbs.partime, _stageTic);
