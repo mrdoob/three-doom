@@ -649,11 +649,20 @@ P_RegisterAction('A_BspiAttack', (a) => {
   faceTarget(a);
   P_SpawnMissile(a, a.target, MT_ARACHPLAZ);
 });
-P_RegisterAction('A_BabyMetal', (a) => { if (_S !== null) _S.S_StartSound(a, 79 /*sfx_bspwlk*/); /* tail-call A_Chase */ });
+P_RegisterAction('A_BabyMetal', (a) => {
+  if (_S !== null) _S.S_StartSound(a, 79 /*sfx_bspwlk*/);
+  actionRegistry['A_Chase']?.(a);
+});
 
 // Cyberdemon footsteps.
-P_RegisterAction('A_Hoof',  (a) => { if (_S !== null) _S.S_StartSound(a, 84 /*sfx_hoof*/);  });
-P_RegisterAction('A_Metal', (a) => { if (_S !== null) _S.S_StartSound(a, 85 /*sfx_metal*/); });
+P_RegisterAction('A_Hoof', (a) => {
+  if (_S !== null) _S.S_StartSound(a, 84 /*sfx_hoof*/);
+  actionRegistry['A_Chase']?.(a);
+});
+P_RegisterAction('A_Metal', (a) => {
+  if (_S !== null) _S.S_StartSound(a, 85 /*sfx_metal*/);
+  actionRegistry['A_Chase']?.(a);
+});
 
 // p_enemy.c A_CyberAttack — Cyberdemon fires a rocket.
 P_RegisterAction('A_CyberAttack', (a) => {
