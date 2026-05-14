@@ -6,7 +6,8 @@ import { EV_VerticalDoor, EV_DoDoor, EV_DoLockedDoor,
 import { EV_DoFloor, EV_BuildStairs, EV_RaiseDonut,
          lowerFloor, lowerFloorToLowest, turboLower, raiseFloor, raiseFloorToNearest,
          raiseFloor24, raiseFloor24AndChange, raiseFloor512, raiseFloorTurbo,
-         raiseToTexture, lowerAndChange, raiseFloorCrush } from './p_floor.js';
+         raiseToTexture, lowerAndChange, raiseFloorCrush,
+         build8, turbo16 } from './p_floor.js';
 import { EV_DoPlat, EV_StopPlat,
          downWaitUpStay, blazeDWUS, raiseAndChange, perpetualRaise,
          raiseToNearestAndChange } from './p_plats.js';
@@ -206,7 +207,7 @@ export function P_CrossSpecialLine(lineOrIdx, side, thing) {
     case 4:   EV_DoDoor(line, 'normal');                      line.special = 0; break;
     case 5:   EV_DoFloor(line, raiseFloor);                   line.special = 0; break;
     case 6:   EV_DoCeiling(line, fastCrushAndRaise);          line.special = 0; break;
-    case 8:   EV_BuildStairs(line, 1 /*build8*/);             line.special = 0; break;
+    case 8:   EV_BuildStairs(line, build8);                   line.special = 0; break;
     case 10:  EV_DoPlat(line, downWaitUpStay, 0);             line.special = 0; break;
     case 12:  EV_LightTurnOn(line, 0);                        line.special = 0; break;
     case 13:  EV_LightTurnOn(line, 255);                      line.special = 0; break;
@@ -231,7 +232,7 @@ export function P_CrossSpecialLine(lineOrIdx, side, thing) {
     case 57:  EV_CeilingCrushStop(line);                      line.special = 0; break;
     case 58:  EV_DoFloor(line, raiseFloor24);                 line.special = 0; break;
     case 59:  EV_DoFloor(line, raiseFloor24AndChange);        line.special = 0; break;
-    case 100: EV_BuildStairs(line, 2 /*turbo16*/);            line.special = 0; break;
+    case 100: EV_BuildStairs(line, turbo16);                  line.special = 0; break;
     case 104: EV_TurnTagLightsOff(line);                      line.special = 0; break;
     case 108: EV_DoDoor(line, 'blazeRaise');                  line.special = 0; break;
     case 109: EV_DoDoor(line, 'blazeOpen');                   line.special = 0; break;
@@ -304,7 +305,7 @@ export function P_UseSpecialLine(thing, line, side) {
     case 117: case 118:
       EV_VerticalDoor(line, thing); break;
     // ---- S1 (one-shot switch) — fire effect, P_ChangeSwitchTexture(line,0) ----
-    case 7:  if (EV_BuildStairs(line, 1 /*build8*/)         !== 0) _PCST(line, 0); break;
+    case 7:  if (EV_BuildStairs(line, build8)               !== 0) _PCST(line, 0); break;
     case 9:  if (EV_DoDonut(line)                            !== 0) _PCST(line, 0); break;
     case 11: _PCST(line, 0);
              if (globalThis.__G_ExitLevel) globalThis.__G_ExitLevel(); break;
@@ -329,7 +330,7 @@ export function P_UseSpecialLine(thing, line, side) {
     case 112: if (EV_DoDoor (line, 'blazeOpen')              !== 0) _PCST(line, 0); break;
     case 113: if (EV_DoDoor (line, 'blazeClose')             !== 0) _PCST(line, 0); break;
     case 122: if (EV_DoPlat (line, blazeDWUS, 0)             !== 0) _PCST(line, 0); break;
-    case 127: if (EV_BuildStairs(line, 2 /*turbo16*/)        !== 0) _PCST(line, 0); break;
+    case 127: if (EV_BuildStairs(line, turbo16)              !== 0) _PCST(line, 0); break;
     case 131: if (EV_DoFloor(line, raiseFloorTurbo)          !== 0) _PCST(line, 0); break;
     case 133: case 135: case 137:
               if (EV_DoLockedDoor(line, 'blazeOpen', thing)  !== 0) _PCST(line, 0); break;
