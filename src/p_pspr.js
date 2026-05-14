@@ -68,10 +68,14 @@ export function P_SetPsprite(player, position, stnum) {
 }
 
 // P_MovePsprites — advance both psprite state machines one tic.
+// p_pspr.c:550 — C tests `psp->state` as a pointer (NULL means inactive).
+// Our port stores state as an integer index; S_NULL (= 0) is the inactive
+// sentinel, NOT -1. Using -1 lets a freshly-cleared psprite (state==0) keep
+// ticking until tics underflows to -1.
 export function P_MovePsprites(player) {
   for (let i = 0; i < 2; i++) {
     const psp = player.psprites[i];
-    if (psp.state !== -1 && psp.tics !== -1) {
+    if (psp.state !== S_NULL && psp.tics !== -1) {
       psp.tics--;
       if (psp.tics === 0) {
         const st = states[psp.state];
