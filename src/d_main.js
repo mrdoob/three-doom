@@ -395,6 +395,7 @@ export async function D_DoomMain() {
   const PM = await import('./p_mobj.js');
   PM.P_SetExternals({
     S_StartSound: S.S_StartSound,
+    S_StopSound:  S.S_StopSound,
     R_RemoveMobjSprite:   RT.R_RemoveMobjSprite,
     R_RegisterMobjSprite: RT.R_RegisterMobjSprite,
   });

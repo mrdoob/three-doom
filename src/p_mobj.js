@@ -96,12 +96,14 @@ export function P_SetExternals(refs) {
   if (refs.P_TryMove)    P_TryMove_external    = refs.P_TryMove;
   if (refs.P_SlideMove)  P_SlideMove_external  = refs.P_SlideMove;
   if (refs.S_StartSound) S_StartSound_external = refs.S_StartSound;
+  if (refs.S_StopSound)  S_StopSound_external  = refs.S_StopSound;
   if (refs.R_RemoveMobjSprite) R_RemoveMobjSprite_external = refs.R_RemoveMobjSprite;
   if (refs.R_RegisterMobjSprite) R_RegisterMobjSprite_external = refs.R_RegisterMobjSprite;
 }
 let P_TryMove_external    = null;
 let P_SlideMove_external  = null;
 let S_StartSound_external = null;
+let S_StopSound_external  = null;
 
 // p_mobj.c:53
 export function P_SetMobjState(mobj, state) {
@@ -264,7 +266,12 @@ export function P_RemoveMobj(mo) {
     iquehead = (iquehead + 1) & (ITEMQUESIZE - 1);
     if (iquehead === iquetail) iquetail = (iquetail + 1) & (ITEMQUESIZE - 1);
   }
+  // unlink from sector and block lists
   P_UnsetThingPosition(mo);
+  // stop any playing sound (p_mobj.c:566) — otherwise positional/looping sfx
+  // attached to this mobj (chaingunner attack, plat/door loops) outlive it.
+  if (S_StopSound_external !== null) S_StopSound_external(mo);
+  // free block
   P_RemoveThinker(mo.thinker);
   // Detach the renderer's sprite billboard (vanilla r_things.c walks
   // sec->thinglist, which P_UnsetThingPosition just unlinked us from; our
