@@ -270,7 +270,10 @@ export function R_GetFlatTexture(flatnum) {
 }
 
 export function R_GetWallTexture(texnum) {
-  if (texnum <= 0 || texnum >= numtextures) return null;
+  // Texture index 0 is a valid TEXTURE1 entry; the NoTexture marker is
+  // already converted to 0 inside R_CheckTextureNumForName so callers handle
+  // it separately. Only -1 means "missing/lookup failed".
+  if (texnum < 0 || texnum >= numtextures) return null;
   let tex = _textureTextureCache.get(texnum);
   if (tex === undefined) {
     tex = makeDataTexture(buildTextureRGBA(texnum));
