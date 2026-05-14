@@ -23,7 +23,7 @@ export function P_InterSetExternals(refs) { if (refs.S) _S = refs.S; if (refs.PM
 export function P_GiveBody(player, num) {
   if (player.health >= 100) return false;
   player.health = Math.min(100, player.health + num);
-  if (player.mo) player.mo.health = player.health;
+  if (player.mo !== null) player.mo.health = player.health;
   return true;
 }
 export function P_GiveArmor(player, armortype) {
@@ -76,7 +76,7 @@ export function P_GiveWeapon(player, weapon, dropped) {
   const wasOwned = player.weaponowned[weapon];
   const clips = (dropped !== 0 && dropped !== false) ? 1 : 2;
   const gaveAmmo = P_GiveAmmo(player, ammoForWeapon(weapon), clips);
-  if (wasOwned) return gaveAmmo;
+  if (wasOwned === true) return gaveAmmo;
   player.weaponowned[weapon] = true;
   player.pendingweapon = weapon;
   return true;
@@ -358,14 +358,14 @@ export function P_DamageMobj(target, inflictor, source, damage) {
 }
 
 export function P_GiveCard(player, card) {
-  if (player.cards[card]) return;
+  if (player.cards[card] === true) return;
   player.bonuscount = 6 /*BONUSADD*/;
   player.cards[card] = true;
 }
 
 // Backpack — doubles max-ammo capacity and gives one clip of each.
 export function P_GiveBackpack(player) {
-  if (!player.backpack) {
+  if (player.backpack !== true) {
     for (let i = 0; i < 4; i++) player.maxammo[i] *= 2;
     player.backpack = true;
   }
@@ -388,7 +388,7 @@ const IRONTICS   = 60 * 35;
 // had the power and it's a single-shot (allmap), true otherwise.
 export function P_GivePower(player, power) {
   if (power === pw_invulnerability) { player.powers[power] = INVULNTICS; return true; }
-  if (power === pw_invisibility)    { player.powers[power] = INVISTICS; if (player.mo) player.mo.flags |= 0x40000 /*MF_SHADOW*/; return true; }
+  if (power === pw_invisibility)    { player.powers[power] = INVISTICS; if (player.mo !== null) player.mo.flags |= 0x40000 /*MF_SHADOW*/; return true; }
   if (power === pw_infrared)        { player.powers[power] = INFRATICS; return true; }
   if (power === pw_ironfeet)        { player.powers[power] = IRONTICS;  return true; }
   if (power === pw_strength)        { P_GiveBody(player, 100); player.powers[power] = 1; return true; }
