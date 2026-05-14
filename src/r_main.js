@@ -11,6 +11,9 @@ import { R_BuildWalls } from './r_segs.js';
 import { R_BuildPlanes } from './r_plane.js';
 import { R_BuildSpriteBillboards, R_ClearSpriteCache, set_view as set_thing_view } from './r_things.js';
 import { R_BuildSky, R_UpdateSky } from './r_sky.js';
+import { R_PointInSubsector } from './r_bsp.js';
+import { segs } from './p_setup.js';
+import { ML_MAPPED } from './doomdata.js';
 
 let _levelRoot = null;
 
@@ -62,6 +65,26 @@ export function R_SetupFrame(player) {
   const ang = bamToRad((mo.angle + viewangleoffset) >>> 0);
   camera.rotation.order = 'YXZ';
   camera.rotation.set(0, ang - Math.PI / 2, 0);
+
+  // Fog-of-war for am_map: r_segs.c:398 sets ML_MAPPED on every linedef whose
+  // seg is drawn during BSP traversal. The 3D port doesn't traverse, so as a
+  // pragmatic approximation we mark the linedefs of the player's current
+  // subsector each frame. The result is "rooms you've stood in" — coarser
+  // than vanilla's frustum-cone but enough for the automap to hide unvisited
+  // geometry instead of revealing the whole map.
+  if (segs !== null) {
+    const ss = R_PointInSubsector(mo.x, mo.y);
+    if (ss !== undefined && ss !== null) {
+      const first = ss.firstline;
+      const n = ss.numlines;
+      for (let i = 0; i < n; i++) {
+        const sg = segs[first + i];
+        if (sg !== undefined && sg.linedef !== null) {
+          sg.linedef.flags |= ML_MAPPED;
+        }
+      }
+    }
+  }
 }
 
 // R_RenderPlayerView — sets up the camera, renders the scene.

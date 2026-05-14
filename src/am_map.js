@@ -6,7 +6,7 @@
 
 import { lines, numlines } from './p_setup.js';
 import { players, consoleplayer } from './doomstat.js';
-import { ML_TWOSIDED, ML_DONTDRAW, ML_SECRET } from './doomdata.js';
+import { ML_TWOSIDED, ML_DONTDRAW, ML_SECRET, ML_MAPPED } from './doomdata.js';
 
 export let automapactive = false;
 export function set_automapactive(v) { automapactive = v; }
@@ -97,6 +97,9 @@ export function AM_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
   for (let i = 0; i < numlines; i++) {
     const li = lines[i];
     if ((li.flags & ML_DONTDRAW) !== 0) continue;
+    // Fog of war: only show linedefs the player has been near (ML_MAPPED set
+    // by r_main.R_SetupFrame for the player's current subsector).
+    if ((li.flags & ML_MAPPED) === 0) continue;
     let color = COLOR_WALL;
     if ((li.flags & ML_SECRET) !== 0) color = COLOR_SECRET;
     else if ((li.flags & ML_TWOSIDED) !== 0) {
