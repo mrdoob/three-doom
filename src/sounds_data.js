@@ -433,7 +433,10 @@ export const S_sfx = [
   {
     "name": "chgun",
     "singularity": false,
-    "priority": 64
+    "priority": 64,
+    "link": 1 /* sfx_pistol */,
+    "pitch": 150,
+    "volume": 0
   },
   {
     "name": "tink",
