@@ -90,6 +90,11 @@ export function P_UpdateButtons() {
   }
 }
 
+// p_switch.c:194 P_ChangeSwitchTexture. The C source plays the switch sound
+// only when a matching switch texture is actually found; lines that aren't in
+// alphSwitchList just fall through and emit nothing. The previous JS port
+// played the sound unconditionally, so any spurious 'use' on a non-switch
+// linedef clicked even though no texture flipped.
 export function P_ChangeSwitchTexture(line, useAgain) {
   if (useAgain === 0) line.special = 0;
   const sd = sides[line.sidenum[0]];
@@ -97,11 +102,25 @@ export function P_ChangeSwitchTexture(line, useAgain) {
   // EXIT SWITCH? (C: only special==11 uses sfx_swtchx)
   const isExit = (line.special === 11);
   const sound  = isExit ? 24 /*sfx_swtchx*/ : 23 /*sfx_swtchn*/;
-  if (_S !== null) _S.S_StartSound(null, sound);
-  // Find the matching switch and flip.
+  // Find the matching switch and flip — play sound only on match.
   for (let i = 0; i < numswitches * 2; i++) {
-    if (switchlist[i] === texTop)        { sd.toptexture    = switchlist[i ^ 1]; if (useAgain !== 0) P_StartButton(line, top,    texTop, 35); return; }
-    if (switchlist[i] === texMid)        { sd.midtexture    = switchlist[i ^ 1]; if (useAgain !== 0) P_StartButton(line, middle, texMid, 35); return; }
-    if (switchlist[i] === texBot)        { sd.bottomtexture = switchlist[i ^ 1]; if (useAgain !== 0) P_StartButton(line, bottom, texBot, 35); return; }
+    if (switchlist[i] === texTop) {
+      if (_S !== null) _S.S_StartSound(null, sound);
+      sd.toptexture = switchlist[i ^ 1];
+      if (useAgain !== 0) P_StartButton(line, top, texTop, 35);
+      return;
+    }
+    if (switchlist[i] === texMid) {
+      if (_S !== null) _S.S_StartSound(null, sound);
+      sd.midtexture = switchlist[i ^ 1];
+      if (useAgain !== 0) P_StartButton(line, middle, texMid, 35);
+      return;
+    }
+    if (switchlist[i] === texBot) {
+      if (_S !== null) _S.S_StartSound(null, sound);
+      sd.bottomtexture = switchlist[i ^ 1];
+      if (useAgain !== 0) P_StartButton(line, bottom, texBot, 35);
+      return;
+    }
   }
 }
