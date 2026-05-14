@@ -11,7 +11,7 @@ import { GameMode_t } from './doomdef.js';
 import { ANGLETOFINESHIFT, FINEMASK, finecosine, finesine } from './tables.js';
 import { P_CheckSight } from './p_sight.js';
 import { R_PointToAngle2 } from './r_bsp.js';
-import { MT_BRUISER, MT_CYBORG, MT_SPIDER, MT_HEADSHOT, MT_TROOPSHOT, MT_BRUISERSHOT, MT_FATSO, MT_FATSHOT, MT_VILE, MT_FIRE, MT_TRACER, MT_SKULL, MT_BABY, MT_PAIN, MT_BOSSBRAIN, MT_BOSSSPIT, MT_BOSSTARGET, MT_SPAWNSHOT, MT_SPAWNFIRE, MT_ROCKET, MT_ARACHPLAZ } from './info.js';
+import { MT_BRUISER, MT_CYBORG, MT_SPIDER, MT_HEADSHOT, MT_TROOPSHOT, MT_BRUISERSHOT, MT_FATSO, MT_FATSHOT, MT_VILE, MT_UNDEAD, MT_FIRE, MT_TRACER, MT_SKULL, MT_BABY, MT_PAIN, MT_BOSSBRAIN, MT_BOSSSPIT, MT_BOSSTARGET, MT_SPAWNSHOT, MT_SPAWNFIRE, MT_ROCKET, MT_ARACHPLAZ } from './info.js';
 import { sfx_claw } from './sounds.js';
 import { EV_DoFloor, lowerFloorToLowest } from './p_floor.js';
 import { P_Random } from './m_random.js';
@@ -101,7 +101,7 @@ P_RegisterAction('A_Look', (actor) => {
       sound = 39 + (P_Random() % 2);
     }
     // Spider and Cyberdemon scream at full volume (decoupled from origin).
-    if (actor.type === 20 /*MT_SPIDER*/ || actor.type === 18 /*MT_CYBORG*/) {
+    if (actor.type === MT_SPIDER || actor.type === MT_CYBORG) {
       _S.S_StartSound(null, sound);
     } else {
       _S.S_StartSound(actor, sound);
@@ -261,16 +261,16 @@ function P_CheckMissileRange(actor) {
   let dist = distApprox(actor.x - actor.target.x, actor.y - actor.target.y) - 64 * 65536;
   if (actor.info.meleestate === 0) dist -= 128 * 65536;
   dist >>= 16;
-  if (actor.type === 22 /*MT_VILE*/ && dist > 14 * 64) return false;
-  if (actor.type === 17 /*MT_UNDEAD*/) {
+  if (actor.type === MT_VILE && dist > 14 * 64) return false;
+  if (actor.type === MT_UNDEAD) {
     if (dist < 196) return false;
     dist >>= 1;
   }
-  if (actor.type === 22 || actor.type === 20 /*MT_SPIDER*/ || actor.type === 19 /*MT_SKULL*/) {
+  if (actor.type === MT_CYBORG || actor.type === MT_SPIDER || actor.type === MT_SKULL) {
     dist >>= 1;
   }
   if (dist > 200) dist = 200;
-  if (actor.type === 22 && dist > 160) dist = 160;
+  if (actor.type === MT_CYBORG && dist > 160) dist = 160;
   if (P_Random() < dist) return false;
   return true;
 }
@@ -354,7 +354,7 @@ P_RegisterAction('A_Scream', (actor) => {
   } else if (sound === 62 /*sfx_bgdth1*/ || sound === 63 /*sfx_bgdth2*/) {
     sound = 62 + (P_Random() % 2);
   }
-  if (actor.type === 20 /*MT_SPIDER*/ || actor.type === 18 /*MT_CYBORG*/) {
+  if (actor.type === MT_SPIDER || actor.type === MT_CYBORG) {
     _S.S_StartSound(null, sound);
   } else {
     _S.S_StartSound(actor, sound);
