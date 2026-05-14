@@ -39,7 +39,7 @@ function installListeners() {
       else if (e.code === 'Escape' || (await import('./doomstat.js')).menuactive) {
         const m = await import('./m_menu.js');
         const codeToKey = {
-          Escape: 27, Enter: 13, NumpadEnter: 13, Backspace: 0x08,
+          Escape: 27, Enter: 13, NumpadEnter: 13, Backspace: 127 /*KEY_BACKSPACE*/,
           ArrowUp: 0xad, ArrowDown: 0xaf, ArrowLeft: 0xac, ArrowRight: 0xae,
           KeyY: 0x79, KeyN: 0x6e,
         };

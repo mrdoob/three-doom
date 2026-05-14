@@ -11,7 +11,8 @@
 // available, falling back to a monospace font for items.
 
 import { menuactive, set_menuactive, gamestate, gamemode } from './doomstat.js';
-import { GameMode_t } from './doomdef.js';
+import { GameMode_t, KEY_UPARROW, KEY_DOWNARROW, KEY_LEFTARROW, KEY_RIGHTARROW,
+  KEY_BACKSPACE, KEY_ESCAPE, KEY_ENTER } from './doomdef.js';
 import { G_DeferedInitNew, G_LoadGame, G_SaveGame } from './g_game.js';
 import { D_AcquirePointerLock } from './d_keyboard.js';
 import { V_DecodePatchToCanvas, V_DrawPatchAtCanvas } from './v_video.js';
@@ -214,34 +215,37 @@ export function M_Responder(ev) {
   // Modal message handling: y/n only.
   if (_message !== null) {
     if (key === 0x79 /*y*/ || key === 13) { _message.routine?.(true);  _message = null; return true; }
-    if (key === 0x6e /*n*/ || key === 27) { _message.routine?.(false); _message = null; return true; }
+    if (key === 0x6e /*n*/ || key === KEY_ESCAPE) { _message.routine?.(false); _message = null; return true; }
     return true;
   }
-  if (key === 27 /*KEY_ESCAPE*/) {
-    if (menuactive) M_ClearMenus(); else M_StartControlPanel();
+  if (key === KEY_ESCAPE) {
+    if (menuactive === true) M_ClearMenus(); else M_StartControlPanel();
     return true;
   }
-  if (!menuactive) return false;
+  if (menuactive !== true) return false;
   const m = _currentMenu;
   if (m === null) return false;
-  if (key === 0xad /*UP*/)   { _selected = (_selected - 1 + m.items.length) % m.items.length; return true; }
-  if (key === 0xaf /*DOWN*/) { _selected = (_selected + 1) % m.items.length; return true; }
-  if (key === 0xac /*LEFT*/) {
+  if (key === KEY_UPARROW)    { _selected = (_selected - 1 + m.items.length) % m.items.length; return true; }
+  if (key === KEY_DOWNARROW)  { _selected = (_selected + 1) % m.items.length; return true; }
+  if (key === KEY_LEFTARROW)  {
     const it = m.items[_selected];
-    if (it.slider) it.set(it.get() - 1);
+    if (it.slider === true) it.set(it.get() - 1);
     return true;
   }
-  if (key === 0xae /*RIGHT*/) {
+  if (key === KEY_RIGHTARROW) {
     const it = m.items[_selected];
-    if (it.slider) it.set(it.get() + 1);
+    if (it.slider === true) it.set(it.get() + 1);
     return true;
   }
-  if (key === 13 /*ENTER*/) {
+  if (key === KEY_ENTER) {
     const it = m.items[_selected];
-    if (it.action) it.action();
+    if (it.action != null) it.action();
     return true;
   }
-  if (key === 0x08 /*BACKSPACE*/) { popMenu(); return true; }
+  // doomdef.h:KEY_BACKSPACE = 127. The previous port used 0x08 (ASCII BS),
+  // which never reaches us because d_keyboard sends 127 for Backspace per
+  // the vanilla mapping.
+  if (key === KEY_BACKSPACE) { popMenu(); return true; }
   return true;
 }
 
