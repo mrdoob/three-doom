@@ -87,6 +87,21 @@ export function P_MovePsprites(player) {
   player.psprites[1].sy = player.psprites[0].sy;
 }
 
+// p_pspr.c:265 P_DropWeapon — called when the player dies. Lowers whatever
+// weapon they currently hold so the death animation looks right.
+export function P_DropWeapon(player) {
+  if (_di === null) return;
+  P_SetPsprite(player, 0 /*ps_weapon*/, _di.weaponinfo[player.readyweapon].downstate);
+}
+
+// p_pspr.c:831 P_SetupPsprites — called at level start for each player.
+// Clears both psprites and brings up the pending weapon.
+export function P_SetupPsprites(player) {
+  for (let i = 0; i < 2 /*NUMPSPRITES*/; i++) player.psprites[i].state = S_NULL;
+  player.pendingweapon = player.readyweapon;
+  P_BringUpWeapon(player);
+}
+
 // Bring the weapon back up after a shot or after switching weapons.
 // Ported from p_pspr.c:138 P_BringUpWeapon.
 function P_BringUpWeapon(player) {
