@@ -2,7 +2,8 @@
 // Floor raise / lower thinkers + EV_DoFloor + T_MovePlane (the generic plane
 // mover used by floors, ceilings, and lifts).
 
-import { sectors, numsectors } from './p_setup.js';
+import { sectors, numsectors, sides } from './p_setup.js';
+import { textureheight } from './r_data.js';
 
 const FRACUNIT = 65536;
 
@@ -221,6 +222,31 @@ export function EV_DoFloor(line, floortype) {
         f.direction = 1;
         f.floordestheight = P_FindNextHighestFloor(sec, sec.floorheight);
         break;
+      case raiseToTexture: {
+        // p_floor.c:372 — raise floor by the minimum bottom-texture height
+        // among the sector's two-sided linedef sides. Used by line action 91
+        // (S1 Floor Raise By Texture) and friends.
+        let minsize = 0x7fffffff;
+        f.direction = 1;
+        if (textureheight !== null && sides !== null) {
+          for (const li of sec.lines) {
+            if ((li.flags & 4 /*ML_TWOSIDED*/) === 0) continue;
+            for (let s = 0; s < 2; s++) {
+              const sidenum = li.sidenum[s];
+              if (sidenum < 0) continue;
+              const sd = sides[sidenum];
+              if (sd === null || sd === undefined) continue;
+              const tex = sd.bottomtexture | 0;
+              if (tex >= 0 && tex < textureheight.length && textureheight[tex] < minsize) {
+                minsize = textureheight[tex];
+              }
+            }
+          }
+        }
+        if (minsize === 0x7fffffff) minsize = 0;
+        f.floordestheight = sec.floorheight + minsize;
+        break;
+      }
       case raiseFloor24:
         f.direction = 1; f.floordestheight = sec.floorheight + 24 * FRACUNIT; break;
       case raiseFloor24AndChange:
