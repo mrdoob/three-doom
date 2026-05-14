@@ -6,6 +6,8 @@ import { players, consoleplayer } from './doomstat.js';
 import { weapontype_t, ammotype_t } from './doomdef.js';
 import { V_DecodePatchToCanvas, V_DrawPatchAtCanvas } from './v_video.js';
 import { M_Random } from './m_random.js';
+import { R_PointToAngle2 } from './r_bsp.js';
+import { ANG45, ANG180 } from './tables.js';
 
 // Patches are decoded + cached centrally in v_video.js (V_DecodePatchToCanvas).
 const getPatch    = V_DecodePatchToCanvas;
@@ -53,6 +55,10 @@ let _priority  = 0;
 let _lastHealth = 100;
 let _oldWeaponsOwned = [false, false, false, false, false, false, false, false, false];
 let _lastAttackDown = -1;
+// st_stuff.c:393 — st_randomnumber: M_Random() called ONCE per tic in
+// ST_Ticker and reused for face-pose selection so we burn one RNG entry per
+// tic regardless of which branch runs. Critical for demo determinism.
+let _stRandomNumber = 0;
 
 function faceHealthIndex(h) {
   if (h >= 80) return 0;
@@ -63,43 +69,85 @@ function faceHealthIndex(h) {
 }
 
 function updateFaceWidget(p) {
-  // Priority cascade (lowest priority first; later branches can override).
-  if (_priority < 10 && p.health <= 0) {
-    _priority = 9; _faceIndex = ST_DEADFACE; _faceCount = 1;
+  // st_stuff.c:752 — ST_updateFaceWidget. The priority cascade is "if not
+  // already claimed by a higher priority, consider this branch". Each branch
+  // may overwrite the face state computed by a lower one.
+
+  if (_priority < 10) {
+    if (p.health <= 0) {
+      _priority = 9; _faceIndex = ST_DEADFACE; _faceCount = 1;
+    }
   }
-  // Evil grin — just picked up a new weapon.
+
+  // Evil grin — just picked up a new weapon (gated on bonuscount in vanilla).
   if (_priority < 9) {
-    let pickedUp = false;
-    // st_stuff.c:781 — iterate all NUMWEAPONS (chainsaw=7, supershotgun=8).
-    for (let i = 0; i < _oldWeaponsOwned.length; i++) {
-      if (p.weaponowned[i] === true && _oldWeaponsOwned[i] === false) {
-        pickedUp = true; _oldWeaponsOwned[i] = true;
+    if (p.bonuscount > 0) {
+      let doevilgrin = false;
+      for (let i = 0; i < _oldWeaponsOwned.length; i++) {
+        if (_oldWeaponsOwned[i] !== p.weaponowned[i]) {
+          doevilgrin = true;
+          _oldWeaponsOwned[i] = p.weaponowned[i];
+        }
+      }
+      if (doevilgrin === true) {
+        _priority = 8; _faceCount = ST_EVILGRINCOUNT;
+        _faceIndex = ST_EVILGRINOFFSET + ST_FACESTRIDE * faceHealthIndex(p.health);
       }
     }
-    if (pickedUp) {
-      _priority = 8; _faceCount = ST_EVILGRINCOUNT;
-      _faceIndex = ST_EVILGRINOFFSET + ST_FACESTRIDE * faceHealthIndex(p.health);
+  }
+
+  // Being attacked by another mobj.
+  if (_priority < 8) {
+    if (p.damagecount > 0 && p.attacker !== null && p.attacker !== p.mo) {
+      _priority = 7;
+      // C compares `plyr->health - st_oldhealth > 20`. That's "health JUMPED
+      // UP by >20 since last tic" — almost never true in practice (it's a
+      // known vanilla quirk). Preserve it literally for demo parity.
+      if (p.health - _lastHealth > ST_MUCHPAIN) {
+        _faceCount = ST_TURNCOUNT;
+        _faceIndex = ST_OUCHOFFSET + ST_FACESTRIDE * faceHealthIndex(p.health);
+      } else {
+        // Choose head-on / turn-left / turn-right from attacker geometry,
+        // matching st_stuff.c:814. `i` from C is a boolean derived from the
+        // unsigned BAM comparison; preserve the same logic.
+        const badguy = R_PointToAngle2(p.mo.x, p.mo.y, p.attacker.x, p.attacker.y) >>> 0;
+        const my = p.mo.angle >>> 0;
+        let diffang, i;
+        if (badguy > my) {
+          diffang = (badguy - my) >>> 0;
+          i = diffang > ANG180 ? 1 : 0;
+        } else {
+          diffang = (my - badguy) >>> 0;
+          i = diffang <= ANG180 ? 1 : 0;
+        }
+        _faceCount = ST_TURNCOUNT;
+        _faceIndex = ST_FACESTRIDE * faceHealthIndex(p.health);
+        if (diffang < ANG45) {
+          _faceIndex += ST_RAMPAGEOFFSET;       // head-on
+        } else if (i === 1) {
+          _faceIndex += ST_TURNOFFSET;          // turn right
+        } else {
+          _faceIndex += ST_TURNOFFSET + 1;      // turn left
+        }
+      }
     }
   }
-  // Severe pain (>20hp drop in one frame).
-  if (_priority < 8) {
-    if (p.damagecount && p.attacker !== null && p.attacker !== p.mo) {
-      if (_lastHealth - p.health > ST_MUCHPAIN) {
+
+  // Self-inflicted / environmental damage (no attacker or attacker is self).
+  if (_priority < 7) {
+    if (p.damagecount > 0) {
+      if (p.health - _lastHealth > ST_MUCHPAIN) {
         _priority = 7; _faceCount = ST_TURNCOUNT;
         _faceIndex = ST_OUCHOFFSET + ST_FACESTRIDE * faceHealthIndex(p.health);
+      } else {
+        _priority = 6; _faceCount = ST_TURNCOUNT;
+        _faceIndex = ST_RAMPAGEOFFSET + ST_FACESTRIDE * faceHealthIndex(p.health);
       }
     }
   }
-  // Pain — turn left/right based on attacker direction (we don't have angle math
-  // here yet, so alternate randomly).
-  if (_priority < 7 && p.damagecount > 0) {
-    _priority = 6; _faceCount = ST_TURNCOUNT;
-    // st_stuff.c: turn = M_Random()&1
-    const turnOff = M_Random() & 1;
-    _faceIndex = ST_TURNOFFSET + turnOff + ST_FACESTRIDE * faceHealthIndex(p.health);
-  }
+
   // Rampage — held attack button for 2+ seconds.
-  if (_priority < 5) {
+  if (_priority < 6) {
     if (p.attackdown !== 0) {
       if (_lastAttackDown === -1) _lastAttackDown = 2 * 35;
       else if (--_lastAttackDown === 0) {
@@ -112,21 +160,27 @@ function updateFaceWidget(p) {
       _lastAttackDown = -1;
     }
   }
-  // God mode overrides almost everything.
-  if (_priority < 4) {
-    if (p.cheats & CF_GODMODE) {
+
+  // God mode and invulnerability sphere.
+  if (_priority < 5) {
+    if ((p.cheats & CF_GODMODE) !== 0
+        || (p.powers != null && p.powers[0 /*pw_invulnerability*/] !== 0)) {
       _priority = 4;
       _faceIndex = ST_GODFACE;
       _faceCount = 1;
     }
   }
-  // Default — pick a random idle pose every half-second.
-  if (--_faceCount < 0) {
-    _priority = 0;
-    // st_stuff.c: st_randomnumber % 3 picks an idle pose.
-    _faceIndex = (M_Random() % 3) + ST_FACESTRIDE * faceHealthIndex(p.health);
+
+  // Idle pose if the face counter has timed out. C uses `!st_facecount`
+  // (post-decrement on the previous tic landed us at 0). Reuse the per-tic
+  // st_randomnumber to pick the pose — must NOT call M_Random() here, or
+  // demos desync.
+  if (_faceCount === 0) {
+    _faceIndex = (_stRandomNumber % 3) + ST_FACESTRIDE * faceHealthIndex(p.health);
     _faceCount = ST_STRAIGHTFACECOUNT;
+    _priority = 0;
   }
+  _faceCount--;
   _lastHealth = p.health;
 }
 
@@ -204,12 +258,14 @@ let _lastSeenMo = null;
 export function ST_Ticker() {
   const p = players[consoleplayer];
   if (p === null || p === undefined) return;
+  // st_stuff.c:992 — st_randomnumber sampled once per tic.
+  _stRandomNumber = M_Random();
   // Reset face state when a new player mobj appears (new level / respawn).
   if (p.mo !== _lastSeenMo) {
     _stStartedThisLevel = false;
     _lastSeenMo = p.mo;
   }
-  if (!_stStartedThisLevel) {
+  if (_stStartedThisLevel === false) {
     for (let i = 0; i < _oldWeaponsOwned.length; i++) _oldWeaponsOwned[i] = p.weaponowned[i] === true;
     _lastHealth = p.health;
     _faceIndex = 0; _faceCount = ST_STRAIGHTFACECOUNT; _priority = 0;
