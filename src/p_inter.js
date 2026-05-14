@@ -92,6 +92,9 @@ function ammoForWeapon(w) {
 }
 
 // P_TouchSpecialThing — player touched a pickup. `special` is the mobj.
+// Faithful port of p_inter.c:336. Each give-* call returns false when the
+// pickup should remain in the world (e.g., already at max ammo); in that
+// case we early-return WITHOUT removing the mobj or playing the sound.
 export function P_TouchSpecialThing(special, toucher) {
   // p_inter.c:348-355 — out-of-reach check (tall pickups stacked vertically).
   const delta = special.z - toucher.z;
@@ -99,59 +102,123 @@ export function P_TouchSpecialThing(special, toucher) {
   if (toucher.health <= 0) return;
   const player = toucher.player;
   if (player === null) return;
-  let pickedUp = true;
   let sound = 32; // sfx_itemup
-  let message = '';
   switch (special.type) {
-    case MT_MISC2:    if (player.health < 200) { player.health++; toucher.health = player.health; } message = 'Picked up a health bonus.'; break;
-    case MT_MISC10:   P_GiveBody(player, 10); message = 'Picked up a stimpack.'; break;
-    case MT_MISC11:   P_GiveBody(player, 25); message = 'Picked up a medikit.'; break;
+    // Health / armor bonuses can always be picked up (cap at 200).
+    case MT_MISC2:
+      if (player.health < 200) { player.health++; toucher.health = player.health; }
+      else { player.health = 200; toucher.health = 200; }
+      player.message = 'Picked up a health bonus.';
+      break;
     case MT_MISC3:
-      // p_inter.c:431 — armor bonus also forces armortype=1 if it was 0,
-      // otherwise the new armorpoints sit unused (P_DamageMobj only consults
-      // armor when armortype > 0). Bug appeared as a 1-armor drift in DEMO2.
       if (player.armorpoints < 200) {
         player.armorpoints++;
         if (player.armortype === 0) player.armortype = 1;
       }
-      message = 'Picked up an armor bonus.'; break;
-    case MT_MISC0:    P_GiveArmor(player, 1); message = 'Picked up the armor.'; break;
-    case MT_MISC1:    P_GiveArmor(player, 2); message = 'Picked up the MegaArmor!'; break;
-    case MT_CLIP:     P_GiveAmmo(player, ammotype_t.am_clip,  (special.flags & MF_DROPPED) !== 0 ? 0 : 1); message = 'Picked up a clip.'; break;
-    case MT_MISC17:   P_GiveAmmo(player, ammotype_t.am_clip,  5); message = 'Picked up a box of bullets.'; break;
-    case MT_MISC22:   P_GiveAmmo(player, ammotype_t.am_shell, 1); message = 'Picked up 4 shotgun shells.'; break;
-    case MT_MISC23:   P_GiveAmmo(player, ammotype_t.am_shell, 5); message = 'Picked up a box of shotgun shells.'; break;
-    case MT_MISC18:   P_GiveAmmo(player, ammotype_t.am_misl,  1); message = 'Picked up a rocket.'; break;
-    case MT_MISC19:   P_GiveAmmo(player, ammotype_t.am_misl,  5); message = 'Picked up a box of rockets.'; break;
-    case MT_MISC20:   P_GiveAmmo(player, ammotype_t.am_cell,  1); message = 'Picked up an energy cell.'; break;
-    case MT_MISC21:   P_GiveAmmo(player, ammotype_t.am_cell,  5); message = 'Picked up an energy cell pack.'; break;
-    case MT_SHOTGUN:  P_GiveWeapon(player, weapontype_t.wp_shotgun,  (special.flags & MF_DROPPED) !== 0); sound = 33; message = 'You got the shotgun!'; break;
-    case MT_CHAINGUN: P_GiveWeapon(player, weapontype_t.wp_chaingun, (special.flags & MF_DROPPED) !== 0); sound = 33; message = 'You got the chaingun!'; break;
-    case MT_MISC25:   P_GiveWeapon(player, weapontype_t.wp_bfg,      false); sound = 33; message = 'You got the BFG9000!  Oh, yes.'; break;
-    case MT_MISC26:   P_GiveWeapon(player, weapontype_t.wp_chainsaw, false); sound = 33; message = 'A chainsaw!  Find some meat!'; break;
-    case MT_MISC27:   P_GiveWeapon(player, weapontype_t.wp_missile,  false); sound = 33; message = 'You got the rocket launcher!'; break;
-    case MT_MISC28:   P_GiveWeapon(player, weapontype_t.wp_plasma,   false); sound = 33; message = 'You got the plasma gun!'; break;
-    // Power-ups (vanilla MT_INV/MEGA etc.).
-    case MT_INV:      P_GivePower(player, pw_invulnerability); sound = 93 /*sfx_getpow*/; message = 'Invulnerability!'; break;
-    case MT_MISC12:   if (player.health < 200) { player.health = Math.min(200, player.health + 100); if (player.mo) player.mo.health = player.health; } message = 'Supercharge!'; sound = 93 /*sfx_getpow*/; break;
-    case MT_MEGA:     P_GiveArmor(player, 2); if (player.health < 200) { player.health = 200; if (player.mo) player.mo.health = 200; } sound = 93 /*sfx_getpow*/; message = 'MegaSphere!'; break;
-    case MT_MISC13:   P_GivePower(player, pw_strength); message = 'Berserk!'; if (player.readyweapon !== weapontype_t.wp_fist) player.pendingweapon = weapontype_t.wp_fist; sound = 93 /*sfx_getpow*/; break;
-    case MT_MISC14:   P_GivePower(player, pw_ironfeet); message = 'Radiation Shielding Suit'; sound = 93 /*sfx_getpow*/; break;
-    case MT_MISC15:   P_GivePower(player, pw_allmap);   message = 'Computer Area Map';      sound = 93 /*sfx_getpow*/; break;
-    case MT_MISC16:   P_GivePower(player, pw_infrared); message = 'Light Amplification Visor'; sound = 93 /*sfx_getpow*/; break;
-    // Keys.
-    case MT_MISC4:    P_GiveCard(player, 0); message = 'Picked up a blue keycard.'; break;
-    case MT_MISC5:    P_GiveCard(player, 2); message = 'Picked up a red keycard.'; break;
-    case MT_MISC6:    P_GiveCard(player, 1); message = 'Picked up a yellow keycard.'; break;
-    case MT_MISC7:    P_GiveCard(player, 4); message = 'Picked up a yellow skull key.'; break;
-    case MT_MISC8:    P_GiveCard(player, 5); message = 'Picked up a red skull key.'; break;
-    case MT_MISC9:    P_GiveCard(player, 3); message = 'Picked up a blue skull key.'; break;
-    case MT_MISC24:   P_GiveBackpack(player); message = 'Picked up a backpack full of ammo!'; break;
-    default: pickedUp = false; break;
+      player.message = 'Picked up an armor bonus.';
+      break;
+    case MT_MISC10:
+      if (P_GiveBody(player, 10) === false) return;
+      player.message = 'Picked up a stimpack.'; break;
+    case MT_MISC11:
+      if (P_GiveBody(player, 25) === false) return;
+      player.message = (player.health < 25) ? 'Picked up a medikit that you REALLY need!' : 'Picked up a medikit.';
+      break;
+    case MT_MISC0:
+      if (P_GiveArmor(player, 1) === false) return;
+      player.message = 'Picked up the armor.'; break;
+    case MT_MISC1:
+      if (P_GiveArmor(player, 2) === false) return;
+      player.message = 'Picked up the MegaArmor!'; break;
+    // Soulsphere / megasphere — always picked up (the C just adds health).
+    case MT_MISC12:
+      player.health += 100;
+      if (player.health > 200) player.health = 200;
+      if (player.mo !== null) player.mo.health = player.health;
+      player.message = 'Supercharge!';
+      sound = 93 /*sfx_getpow*/;
+      break;
+    case MT_MEGA:
+      player.health = 200;
+      if (player.mo !== null) player.mo.health = 200;
+      P_GiveArmor(player, 2);
+      player.message = 'MegaSphere!';
+      sound = 93 /*sfx_getpow*/;
+      break;
+    // Ammo.
+    case MT_CLIP:
+      if (P_GiveAmmo(player, ammotype_t.am_clip, (special.flags & MF_DROPPED) !== 0 ? 0 : 1) === false) return;
+      player.message = 'Picked up a clip.'; break;
+    case MT_MISC17:
+      if (P_GiveAmmo(player, ammotype_t.am_clip,  5) === false) return;
+      player.message = 'Picked up a box of bullets.'; break;
+    case MT_MISC22:
+      if (P_GiveAmmo(player, ammotype_t.am_shell, 1) === false) return;
+      player.message = 'Picked up 4 shotgun shells.'; break;
+    case MT_MISC23:
+      if (P_GiveAmmo(player, ammotype_t.am_shell, 5) === false) return;
+      player.message = 'Picked up a box of shotgun shells.'; break;
+    case MT_MISC18:
+      if (P_GiveAmmo(player, ammotype_t.am_misl,  1) === false) return;
+      player.message = 'Picked up a rocket.'; break;
+    case MT_MISC19:
+      if (P_GiveAmmo(player, ammotype_t.am_misl,  5) === false) return;
+      player.message = 'Picked up a box of rockets.'; break;
+    case MT_MISC20:
+      if (P_GiveAmmo(player, ammotype_t.am_cell,  1) === false) return;
+      player.message = 'Picked up an energy cell.'; break;
+    case MT_MISC21:
+      if (P_GiveAmmo(player, ammotype_t.am_cell,  5) === false) return;
+      player.message = 'Picked up an energy cell pack.'; break;
+    // Weapons.
+    case MT_SHOTGUN:
+      if (P_GiveWeapon(player, weapontype_t.wp_shotgun,  (special.flags & MF_DROPPED) !== 0) === false) return;
+      sound = 33; player.message = 'You got the shotgun!'; break;
+    case MT_CHAINGUN:
+      if (P_GiveWeapon(player, weapontype_t.wp_chaingun, (special.flags & MF_DROPPED) !== 0) === false) return;
+      sound = 33; player.message = 'You got the chaingun!'; break;
+    case MT_MISC25:
+      if (P_GiveWeapon(player, weapontype_t.wp_bfg,      false) === false) return;
+      sound = 33; player.message = 'You got the BFG9000!  Oh, yes.'; break;
+    case MT_MISC26:
+      if (P_GiveWeapon(player, weapontype_t.wp_chainsaw, false) === false) return;
+      sound = 33; player.message = 'A chainsaw!  Find some meat!'; break;
+    case MT_MISC27:
+      if (P_GiveWeapon(player, weapontype_t.wp_missile,  false) === false) return;
+      sound = 33; player.message = 'You got the rocket launcher!'; break;
+    case MT_MISC28:
+      if (P_GiveWeapon(player, weapontype_t.wp_plasma,   false) === false) return;
+      sound = 33; player.message = 'You got the plasma gun!'; break;
+    // Power-ups.
+    case MT_INV:
+      if (P_GivePower(player, pw_invulnerability) === false) return;
+      player.message = 'Invulnerability!'; sound = 93 /*sfx_getpow*/; break;
+    case MT_MISC13:
+      if (P_GivePower(player, pw_strength) === false) return;
+      player.message = 'Berserk!';
+      if (player.readyweapon !== weapontype_t.wp_fist) player.pendingweapon = weapontype_t.wp_fist;
+      sound = 93 /*sfx_getpow*/; break;
+    case MT_MISC14:
+      if (P_GivePower(player, pw_ironfeet) === false) return;
+      player.message = 'Radiation Shielding Suit'; sound = 93 /*sfx_getpow*/; break;
+    case MT_MISC15:
+      if (P_GivePower(player, pw_allmap) === false) return;
+      player.message = 'Computer Area Map'; sound = 93 /*sfx_getpow*/; break;
+    case MT_MISC16:
+      if (P_GivePower(player, pw_infrared) === false) return;
+      player.message = 'Light Amplification Visor'; sound = 93 /*sfx_getpow*/; break;
+    // Keys (always picked up; message only printed if not already owned).
+    case MT_MISC4: if (player.cards[0] !== true) player.message = 'Picked up a blue keycard.';   P_GiveCard(player, 0); break;
+    case MT_MISC5: if (player.cards[2] !== true) player.message = 'Picked up a red keycard.';    P_GiveCard(player, 2); break;
+    case MT_MISC6: if (player.cards[1] !== true) player.message = 'Picked up a yellow keycard.'; P_GiveCard(player, 1); break;
+    case MT_MISC7: if (player.cards[4] !== true) player.message = 'Picked up a yellow skull key.'; P_GiveCard(player, 4); break;
+    case MT_MISC8: if (player.cards[5] !== true) player.message = 'Picked up a red skull key.';    P_GiveCard(player, 5); break;
+    case MT_MISC9: if (player.cards[3] !== true) player.message = 'Picked up a blue skull key.';   P_GiveCard(player, 3); break;
+    // Backpack is one-shot ammo-cap doubler; always picked up.
+    case MT_MISC24: P_GiveBackpack(player); player.message = 'Picked up a backpack full of ammo!'; break;
+    default: return; // unknown special — leave it in place
   }
-  if (!pickedUp) return;
   if ((special.flags & 0x800000 /*MF_COUNTITEM*/) !== 0) player.itemcount++;
-  if (message !== '') player.message = message;
   if (_S !== null) _S.S_StartSound(null /*player.mo would 3D-pan*/, sound);
   player.bonuscount += 6;
   if (_PM !== null) _PM.P_RemoveMobj(special);
