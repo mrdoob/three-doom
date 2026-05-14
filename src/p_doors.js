@@ -207,7 +207,7 @@ export function EV_VerticalDoor(line, thing) {
   switch (line.special) {
     case 26: case 32: // Blue
       if (player === null) return;
-      if (!player.cards[0 /*bluecard*/] && !player.cards[3 /*blueskull*/]) {
+      if (player.cards[0 /*bluecard*/] !== true && player.cards[3 /*blueskull*/] !== true) {
         player.message = 'You need a blue key to open this door';
         if (_S !== null) _S.S_StartSound(null, 34 /*sfx_oof*/);
         return;
@@ -215,7 +215,7 @@ export function EV_VerticalDoor(line, thing) {
       break;
     case 27: case 34: // Yellow
       if (player === null) return;
-      if (!player.cards[1 /*yellowcard*/] && !player.cards[4 /*yellowskull*/]) {
+      if (player.cards[1 /*yellowcard*/] !== true && player.cards[4 /*yellowskull*/] !== true) {
         player.message = 'You need a yellow key to open this door';
         if (_S !== null) _S.S_StartSound(null, 34 /*sfx_oof*/);
         return;
@@ -223,7 +223,7 @@ export function EV_VerticalDoor(line, thing) {
       break;
     case 28: case 33: // Red
       if (player === null) return;
-      if (!player.cards[2 /*redcard*/] && !player.cards[5 /*redskull*/]) {
+      if (player.cards[2 /*redcard*/] !== true && player.cards[5 /*redskull*/] !== true) {
         player.message = 'You need a red key to open this door';
         if (_S !== null) _S.S_StartSound(null, 34 /*sfx_oof*/);
         return;
@@ -273,21 +273,21 @@ export function EV_DoLockedDoor(line, typeArg, thing) {
   if (player === null) return 0;
   switch (line.special) {
     case 99: case 133:
-      if (!player.cards[0] && !player.cards[3]) {
+      if (player.cards[0] !== true && player.cards[3] !== true) {
         player.message = 'You need a blue key to open this door';
         if (_S !== null) _S.S_StartSound(null, 34 /*sfx_oof*/);
         return 0;
       }
       break;
     case 134: case 135:
-      if (!player.cards[2] && !player.cards[5]) {
+      if (player.cards[2] !== true && player.cards[5] !== true) {
         player.message = 'You need a red key to open this door';
         if (_S !== null) _S.S_StartSound(null, 34 /*sfx_oof*/);
         return 0;
       }
       break;
     case 136: case 137:
-      if (!player.cards[1] && !player.cards[4]) {
+      if (player.cards[1] !== true && player.cards[4] !== true) {
         player.message = 'You need a yellow key to open this door';
         if (_S !== null) _S.S_StartSound(null, 34 /*sfx_oof*/);
         return 0;
