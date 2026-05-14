@@ -359,7 +359,10 @@ export function P_UseSpecialLine(thing, line, side) {
               if (EV_DoLockedDoor(line, 'blazeOpen', thing)  !== 0) _PCST(line, 1); break;
     case 138: EV_LightTurnOn(line, 255); _PCST(line, 1); break;
     case 139: EV_LightTurnOn(line, 35);  _PCST(line, 1); break;
-    default: return false;
+    // p_switch.c falls through to the final 'return true' for unknown
+    // specials — every use of a non-special front side counts as a USE.
+    // Do NOT return false in default or callers (P_UseLines / p_enemy)
+    // diverge from vanilla.
   }
   return true;
 }
