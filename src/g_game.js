@@ -37,21 +37,32 @@ export function G_Responder(ev) {
 }
 
 export function G_Ticker() {
-  // Run pending gameaction. NB: each G_Do* may queue a new gameaction
-  // (G_DoNewGame queues ga_loadlevel) so we must NOT unconditionally clear it
-  // afterwards — clearing is the handler's own responsibility (G_DoLoadLevel
-  // sets ga_nothing once the level is loaded).
-  switch (gameaction) {
-    case gameaction_t.ga_loadlevel:  G_DoLoadLevel();   break;
-    case gameaction_t.ga_newgame:    G_DoNewGame();     break;
-    case gameaction_t.ga_loadgame:   G_DoLoadGame();    set_gameaction(gameaction_t.ga_nothing); break;
-    case gameaction_t.ga_savegame:   G_DoSaveGame();    set_gameaction(gameaction_t.ga_nothing); break;
-    case gameaction_t.ga_playdemo:   G_DoPlayDemo();    break;
-    case gameaction_t.ga_completed:  G_DoCompleted();   set_gameaction(gameaction_t.ga_nothing); break;
-    case gameaction_t.ga_victory:    G_DoVictory();     set_gameaction(gameaction_t.ga_nothing); break;
-    case gameaction_t.ga_worlddone:  G_DoWorldDone();   set_gameaction(gameaction_t.ga_nothing); break;
-    case gameaction_t.ga_screenshot: G_ScreenShot();    set_gameaction(gameaction_t.ga_nothing); break;
+  // g_game.c:G_Ticker uses `while (gameaction != ga_nothing)` so chained
+  // actions (e.g. ga_newgame queues ga_loadlevel) drain in one tic instead
+  // of taking N tics to settle. Match that with a drain loop and a guard
+  // against infinite cycles.
+  let guard = 32;
+  while (gameaction !== gameaction_t.ga_nothing && guard-- > 0) {
+    const a = gameaction;
+    switch (a) {
+      case gameaction_t.ga_loadlevel:  G_DoLoadLevel();   break;
+      case gameaction_t.ga_newgame:    G_DoNewGame();     break;
+      case gameaction_t.ga_loadgame:   G_DoLoadGame();    set_gameaction(gameaction_t.ga_nothing); break;
+      case gameaction_t.ga_savegame:   G_DoSaveGame();    set_gameaction(gameaction_t.ga_nothing); break;
+      case gameaction_t.ga_playdemo:   G_DoPlayDemo();    break;
+      case gameaction_t.ga_completed:  G_DoCompleted();   set_gameaction(gameaction_t.ga_nothing); break;
+      case gameaction_t.ga_victory:    G_DoVictory();     set_gameaction(gameaction_t.ga_nothing); break;
+      case gameaction_t.ga_worlddone:  G_DoWorldDone();   set_gameaction(gameaction_t.ga_nothing); break;
+      case gameaction_t.ga_screenshot: G_ScreenShot();    set_gameaction(gameaction_t.ga_nothing); break;
+      default: set_gameaction(gameaction_t.ga_nothing); break;
+    }
+    // If the handler didn't advance gameaction we'd loop forever; break out.
+    if (gameaction === a) break;
   }
+  // NB: P_Ticker / M_Ticker / ST_Ticker etc. are dispatched from d_main's
+  // 35Hz accumulator instead of from here. Vanilla g_game.c:G_Ticker calls
+  // them in sequence based on gamestate; the JS architecture routes those
+  // through d_main so this function only handles the gameaction queue.
 }
 
 // Player state transitions.
