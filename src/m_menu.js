@@ -98,7 +98,7 @@ const READ_MENU_2 = { name: 'Read This 2', x: 330, y: 175, fullscreen: 'HELP2', 
 // ---------- Volume change side-effect wiring ----------
 let _onVolumeChanged = null;
 export function M_SetExternals(refs) {
-  if (refs.onVolumeChanged) _onVolumeChanged = refs.onVolumeChanged;
+  if (refs.onVolumeChanged != null) _onVolumeChanged = refs.onVolumeChanged;
 }
 function _notifyVolume() { if (_onVolumeChanged) _onVolumeChanged(sfxVolume, musicVolume); }
 

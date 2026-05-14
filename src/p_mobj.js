@@ -92,13 +92,13 @@ export let P_RemoveMobj_external = null; // wired by SetExternals to avoid cycle
 let R_RemoveMobjSprite_external = null;
 let R_RegisterMobjSprite_external = null;
 export function P_SetExternals(refs) {
-  if (refs.P_RemoveMobj) P_RemoveMobj_external = refs.P_RemoveMobj;
-  if (refs.P_TryMove)    P_TryMove_external    = refs.P_TryMove;
-  if (refs.P_SlideMove)  P_SlideMove_external  = refs.P_SlideMove;
-  if (refs.S_StartSound) S_StartSound_external = refs.S_StartSound;
-  if (refs.S_StopSound)  S_StopSound_external  = refs.S_StopSound;
-  if (refs.R_RemoveMobjSprite) R_RemoveMobjSprite_external = refs.R_RemoveMobjSprite;
-  if (refs.R_RegisterMobjSprite) R_RegisterMobjSprite_external = refs.R_RegisterMobjSprite;
+  if (refs.P_RemoveMobj != null) P_RemoveMobj_external = refs.P_RemoveMobj;
+  if (refs.P_TryMove != null)    P_TryMove_external    = refs.P_TryMove;
+  if (refs.P_SlideMove != null)  P_SlideMove_external  = refs.P_SlideMove;
+  if (refs.S_StartSound != null) S_StartSound_external = refs.S_StartSound;
+  if (refs.S_StopSound != null)  S_StopSound_external  = refs.S_StopSound;
+  if (refs.R_RemoveMobjSprite != null) R_RemoveMobjSprite_external = refs.R_RemoveMobjSprite;
+  if (refs.R_RegisterMobjSprite != null) R_RegisterMobjSprite_external = refs.R_RegisterMobjSprite;
 }
 let P_TryMove_external    = null;
 let P_SlideMove_external  = null;
@@ -627,6 +627,6 @@ export function P_SpawnPlayerMissile(source, type) {
 let P_AimLineAttack_external = null;
 let getLinetarget_external   = () => null;
 export function P_MobjSetMap(refs) {
-  if (refs.P_AimLineAttack) P_AimLineAttack_external = refs.P_AimLineAttack;
-  if (refs.getLinetarget)   getLinetarget_external   = refs.getLinetarget;
+  if (refs.P_AimLineAttack != null) P_AimLineAttack_external = refs.P_AimLineAttack;
+  if (refs.getLinetarget != null)   getLinetarget_external   = refs.getLinetarget;
 }

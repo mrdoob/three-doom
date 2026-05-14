@@ -70,10 +70,10 @@ let R_FlatNumForName    = (_n) => 0;
 let P_SpawnMapThing     = (_mt) => {};
 let R_PrecacheLevel     = () => {};
 export function P_SetExternals(refs) {
-  if (refs.R_TextureNumForName) R_TextureNumForName = refs.R_TextureNumForName;
-  if (refs.R_FlatNumForName)    R_FlatNumForName    = refs.R_FlatNumForName;
-  if (refs.P_SpawnMapThing)     P_SpawnMapThing     = refs.P_SpawnMapThing;
-  if (refs.R_PrecacheLevel)     R_PrecacheLevel     = refs.R_PrecacheLevel;
+  if (refs.R_TextureNumForName != null) R_TextureNumForName = refs.R_TextureNumForName;
+  if (refs.R_FlatNumForName != null)    R_FlatNumForName    = refs.R_FlatNumForName;
+  if (refs.P_SpawnMapThing != null)     P_SpawnMapThing     = refs.P_SpawnMapThing;
+  if (refs.R_PrecacheLevel != null)     R_PrecacheLevel     = refs.R_PrecacheLevel;
 }
 
 function readName8(bytes, offset) {

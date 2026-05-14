@@ -41,9 +41,9 @@ let P_PlayerThink     = (_p) => {};
 let P_UpdateSpecials  = () => {};
 let P_RespawnSpecials = () => {};
 export function P_SetExternals(refs) {
-  if (refs.P_PlayerThink)            P_PlayerThink            = refs.P_PlayerThink;
-  if (refs.P_UpdateSpecials)         P_UpdateSpecials         = refs.P_UpdateSpecials;
-  if (refs.P_RespawnSpecials)        P_RespawnSpecials        = refs.P_RespawnSpecials;
+  if (refs.P_PlayerThink != null)            P_PlayerThink            = refs.P_PlayerThink;
+  if (refs.P_UpdateSpecials != null)         P_UpdateSpecials         = refs.P_UpdateSpecials;
+  if (refs.P_RespawnSpecials != null)        P_RespawnSpecials        = refs.P_RespawnSpecials;
 }
 
 export function P_RunThinkers() {

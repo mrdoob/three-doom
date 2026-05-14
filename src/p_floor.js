@@ -14,17 +14,17 @@ let _R_UpdateSectorPlanes = null;
 let _P_AddThinker = null, _P_RemoveThinker = null;
 let _S = null;
 export function P_FloorSetExternals(refs) {
-  if (refs.R_UpdateSectorPlanes) _R_UpdateSectorPlanes = refs.R_UpdateSectorPlanes;
-  if (refs.P_AddThinker)         _P_AddThinker         = refs.P_AddThinker;
-  if (refs.P_RemoveThinker)      _P_RemoveThinker      = refs.P_RemoveThinker;
-  if (refs.S)                    _S                    = refs.S;
+  if (refs.R_UpdateSectorPlanes != null) _R_UpdateSectorPlanes = refs.R_UpdateSectorPlanes;
+  if (refs.P_AddThinker != null)         _P_AddThinker         = refs.P_AddThinker;
+  if (refs.P_RemoveThinker != null)      _P_RemoveThinker      = refs.P_RemoveThinker;
+  if (refs.S != null)                    _S                    = refs.S;
 }
 
 // p_floor.c:49 — T_MovePlane. floorOrCeiling: 0=floor, 1=ceiling. direction:
 // -1=down, 1=up. Uses P_ChangeSector to crush mobjs when the plane closes on
 // them; non-crush movers reverse direction on contact.
 let _P_ChangeSector_ext = null;
-export function P_FloorSetMap(refs) { if (refs.P_ChangeSector) _P_ChangeSector_ext = refs.P_ChangeSector; }
+export function P_FloorSetMap(refs) { if (refs.P_ChangeSector != null) _P_ChangeSector_ext = refs.P_ChangeSector; }
 
 function changeAndUpdate(sec, crush) {
   if (_R_UpdateSectorPlanes !== null) _R_UpdateSectorPlanes(sec);

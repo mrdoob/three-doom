@@ -14,9 +14,9 @@ let _P_AddThinker = null;
 let _P_RemoveThinker = null;
 let _R_UpdateSectorLight = null;
 export function P_LightsSetExternals(refs) {
-  if (refs.P_AddThinker)        _P_AddThinker        = refs.P_AddThinker;
-  if (refs.P_RemoveThinker)     _P_RemoveThinker     = refs.P_RemoveThinker;
-  if (refs.R_UpdateSectorLight) _R_UpdateSectorLight = refs.R_UpdateSectorLight;
+  if (refs.P_AddThinker != null)        _P_AddThinker        = refs.P_AddThinker;
+  if (refs.P_RemoveThinker != null)     _P_RemoveThinker     = refs.P_RemoveThinker;
+  if (refs.R_UpdateSectorLight != null) _R_UpdateSectorLight = refs.R_UpdateSectorLight;
 }
 // Helper called by each tic that mutates sector.lightlevel.
 function applyLight(sec) {

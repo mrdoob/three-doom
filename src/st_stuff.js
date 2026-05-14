@@ -212,7 +212,7 @@ const RADIATIONPAL = 13;
 let _lastPaletteIndex = 0;
 let _setPaletteIndex = null;
 
-export function ST_SetExternals(refs) { if (refs.I_SetPaletteIndex) _setPaletteIndex = refs.I_SetPaletteIndex; }
+export function ST_SetExternals(refs) { if (refs.I_SetPaletteIndex != null) _setPaletteIndex = refs.I_SetPaletteIndex; }
 
 export function ST_doPaletteStuff() {
   const p = players[consoleplayer];

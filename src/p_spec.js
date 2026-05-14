@@ -28,7 +28,7 @@ export function P_InitPicAnims() {
 // At level load, give each special-sector spawn its thinker (light flashes
 // etc.) and initialise switches/buttons.
 let _PLights = null;
-export function P_SpecSetExternals(refs) { if (refs.PLights) _PLights = refs.PLights; }
+export function P_SpecSetExternals(refs) { if (refs.PLights != null) _PLights = refs.PLights; }
 
 export function P_SpawnSpecials() {
   for (let i = 0; i < numsectors; i++) {
@@ -61,7 +61,7 @@ export function P_SpawnSpecials() {
 
 // Per-tic update — drive switch button countdowns.
 let _PSwitch = null;
-export function P_SpecSetSwitch(refs) { if (refs.PSwitch) _PSwitch = refs.PSwitch; }
+export function P_SpecSetSwitch(refs) { if (refs.PSwitch != null) _PSwitch = refs.PSwitch; }
 export function P_UpdateSpecials() {
   if (_PSwitch !== null && typeof _PSwitch.P_UpdateButtons === 'function') _PSwitch.P_UpdateButtons();
 }
@@ -110,7 +110,7 @@ export function P_PlayerInSpecialSector(player) {
 }
 
 let _PMap_dmg = null;
-export function P_SpecSetInter(refs) { if (refs.PInter) _PMap_dmg = refs.PInter; }
+export function P_SpecSetInter(refs) { if (refs.PInter != null) _PMap_dmg = refs.PInter; }
 
 // Gun-shoot triggered line specials (G1/GR — types 24, 46, 47).
 export function P_ShootSpecialLine(thing, line) {
@@ -166,7 +166,7 @@ export function EV_DoDonut(line) {
 }
 
 let _PFloor = null;
-export function P_SpecSetFloor(refs) { if (refs.PFloor) _PFloor = refs.PFloor; }
+export function P_SpecSetFloor(refs) { if (refs.PFloor != null) _PFloor = refs.PFloor; }
 
 export function P_FindSectorFromLineTag(line, start) {
   for (let i = start + 1; i < numsectors; i++) if (sectors[i].tag === line.tag) return i;

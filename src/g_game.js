@@ -22,7 +22,7 @@ let _deferred = null; // pending gameaction params
 // External hooks (wired by d_main.js).
 let _loadLevel = null; // async (episode, map, skill) => Promise<void>
 export function G_SetExternals(refs) {
-  if (refs.loadLevel) _loadLevel = refs.loadLevel;
+  if (refs.loadLevel != null) _loadLevel = refs.loadLevel;
 }
 
 export function G_BuildTiccmd(_cmd) {

@@ -18,7 +18,7 @@ import { P_Random } from './m_random.js';
 // Externals (wired at init).
 let _S = null;
 let _PM = null;
-export function P_InterSetExternals(refs) { if (refs.S) _S = refs.S; if (refs.PM) _PM = refs.PM; }
+export function P_InterSetExternals(refs) { if (refs.S != null) _S = refs.S; if (refs.PM != null) _PM = refs.PM; }
 
 export function P_GiveBody(player, num) {
   if (player.health >= 100) return false;

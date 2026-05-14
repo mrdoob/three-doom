@@ -281,16 +281,16 @@ export function P_PlayerThink(player) {
 
 // Externals for sector specials.
 let _PSpec = null;
-export function P_UserSetSpec(refs) { if (refs.PSpec) _PSpec = refs.PSpec; }
+export function P_UserSetSpec(refs) { if (refs.PSpec != null) _PSpec = refs.PSpec; }
 
 let _pInter = null;
-export function P_UserSetInter(refs) { if (refs.p_inter) _pInter = refs.p_inter; }
+export function P_UserSetInter(refs) { if (refs.p_inter != null) _pInter = refs.p_inter; }
 
 let _r_bsp = null;
 let _PMobjMod = null;
 let _gamemode = 0; // shareware by default; doomstat sets this at init
 export function P_UserSetExternals(refs) {
-  if (refs.r_bsp)  _r_bsp     = refs.r_bsp;
-  if (refs.p_mobj) _PMobjMod  = refs.p_mobj;
+  if (refs.r_bsp != null)  _r_bsp     = refs.r_bsp;
+  if (refs.p_mobj != null) _PMobjMod  = refs.p_mobj;
   if (refs.gamemode != null) _gamemode = refs.gamemode;
 }

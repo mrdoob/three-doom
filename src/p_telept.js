@@ -12,10 +12,10 @@ let _PMobj = null;
 let _PMap = null;
 let _thinkercap = null;
 export function P_TeleptSetExternals(refs) {
-  if (refs.S)          _S = refs.S;
-  if (refs.PMobj)      _PMobj = refs.PMobj;
-  if (refs.PMap)       _PMap = refs.PMap;
-  if (refs.thinkercap) _thinkercap = refs.thinkercap;
+  if (refs.S != null)          _S = refs.S;
+  if (refs.PMobj != null)      _PMobj = refs.PMobj;
+  if (refs.PMap != null)       _PMap = refs.PMap;
+  if (refs.thinkercap != null) _thinkercap = refs.thinkercap;
 }
 
 export function EV_Teleport(line, side, thing) {

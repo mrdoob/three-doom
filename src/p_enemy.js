@@ -19,7 +19,7 @@ import { P_Random } from './m_random.js';
 
 // External wiring.
 let _S = null;
-export function P_EnemySetExternals(refs) { if (refs.S) _S = refs.S; }
+export function P_EnemySetExternals(refs) { if (refs.S != null) _S = refs.S; }
 
 const MELEERANGE = 64 << 16;
 const MISSILERANGE = 32 * 64 << 16;
@@ -376,9 +376,9 @@ P_RegisterAction('A_PlayerScream', (actor) => {
 // External: P_LineAttack (hitscan) and P_DamageMobj (direct damage).
 let _PMap = null, _PInter = null, _PSpec = null;
 export function P_EnemySetMap(refs) {
-  if (refs.PMap)   _PMap   = refs.PMap;
-  if (refs.PInter) _PInter = refs.PInter;
-  if (refs.PSpec)  _PSpec  = refs.PSpec;
+  if (refs.PMap != null)   _PMap   = refs.PMap;
+  if (refs.PInter != null) _PInter = refs.PInter;
+  if (refs.PSpec != null)  _PSpec  = refs.PSpec;
 }
 
 // P_RecursiveSound / P_NoiseAlert — wake up monsters in adjacent sectors when

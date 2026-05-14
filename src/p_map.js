@@ -55,11 +55,11 @@ export let floatok = false;
 // External wiring.
 let _PInter = null, _PSpec = null, _PMobj = null, _thinkercap = null, _S = null;
 export function P_MapSetExternals(refs) {
-  if (refs.PInter)     _PInter = refs.PInter;
-  if (refs.PSpec)      _PSpec  = refs.PSpec;
-  if (refs.PMobj)      _PMobj  = refs.PMobj;
-  if (refs.thinkercap) _thinkercap = refs.thinkercap;
-  if (refs.S)          _S      = refs.S;
+  if (refs.PInter != null)     _PInter = refs.PInter;
+  if (refs.PSpec != null)      _PSpec  = refs.PSpec;
+  if (refs.PMobj != null)      _PMobj  = refs.PMobj;
+  if (refs.thinkercap != null) _thinkercap = refs.thinkercap;
+  if (refs.S != null)          _S      = refs.S;
 }
 
 // p_map.c:252 — PIT_CheckThing. Returns false to abort the move.

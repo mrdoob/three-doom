@@ -13,10 +13,10 @@ let _R_UpdateSectorPlanes = null;
 let _P_AddThinker = null, _P_RemoveThinker = null;
 let _S = null;
 export function P_CeilingSetExternals(refs) {
-  if (refs.R_UpdateSectorPlanes) _R_UpdateSectorPlanes = refs.R_UpdateSectorPlanes;
-  if (refs.P_AddThinker)         _P_AddThinker         = refs.P_AddThinker;
-  if (refs.P_RemoveThinker)      _P_RemoveThinker      = refs.P_RemoveThinker;
-  if (refs.S)                    _S                    = refs.S;
+  if (refs.R_UpdateSectorPlanes != null) _R_UpdateSectorPlanes = refs.R_UpdateSectorPlanes;
+  if (refs.P_AddThinker != null)         _P_AddThinker         = refs.P_AddThinker;
+  if (refs.P_RemoveThinker != null)      _P_RemoveThinker      = refs.P_RemoveThinker;
+  if (refs.S != null)                    _S                    = refs.S;
 }
 
 function P_FindHighestCeilingSurrounding(sec) {

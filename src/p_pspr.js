@@ -170,10 +170,10 @@ function P_FireWeapon(player) {
 // Per-weapon action functions ported from p_pspr.c.
 let _S = null, _di = null, _PMap = null, _PEnemy = null;
 export function P_PsprSetExternals(refs) {
-  if (refs.S)      _S      = refs.S;
-  if (refs.di)     _di     = refs.di;
-  if (refs.PMap)   _PMap   = refs.PMap;
-  if (refs.PEnemy) _PEnemy = refs.PEnemy;
+  if (refs.S != null)      _S      = refs.S;
+  if (refs.di != null)     _di     = refs.di;
+  if (refs.PMap != null)   _PMap   = refs.PMap;
+  if (refs.PEnemy != null) _PEnemy = refs.PEnemy;
 }
 
 P_RegisterAction('A_Light0',   (player) => {
@@ -318,8 +318,8 @@ let bulletslope = 0;
 let _PMobj = null;
 let _PInter = null;
 export function P_PsprSetMobj(refs) {
-  if (refs.PMobj)  _PMobj  = refs.PMobj;
-  if (refs.PInter) _PInter = refs.PInter;
+  if (refs.PMobj != null)  _PMobj  = refs.PMobj;
+  if (refs.PInter != null) _PInter = refs.PInter;
 }
 
 function hitscanPlayer(player, numShots, dmgFn, sound, ammoIdx, accurate) {

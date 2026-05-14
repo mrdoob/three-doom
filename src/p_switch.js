@@ -49,7 +49,7 @@ const buttonlist = new Array(MAXBUTTONS);
 for (let i = 0; i < MAXBUTTONS; i++) buttonlist[i] = { line: null, where: 0, btexture: 0, btimer: 0 };
 
 let _S = null;
-export function P_SwitchSetExternals(refs) { if (refs.S) _S = refs.S; }
+export function P_SwitchSetExternals(refs) { if (refs.S != null) _S = refs.S; }
 
 export function P_InitSwitchList(episode) {
   switchlist = [];
