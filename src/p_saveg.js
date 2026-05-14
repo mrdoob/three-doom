@@ -83,29 +83,77 @@ export function P_UnArchivePlayers(arr) {
   }
 }
 
-// World snapshot: sectors' moving heights + tag/special.
+// p_saveg.c:P_ArchiveWorld — sectors, lines, sides. Vanilla also serialises:
+//   sector: floorheight, ceilingheight, floorpic, ceilingpic, lightlevel,
+//           special, tag
+//   line:   flags, special, tag
+//   side:   textureoffset, rowoffset, toptexture, bottomtexture, midtexture
+// We must capture all of these so switches don't reset, scrolling textures
+// preserve their offsets, and triggered specials remember they're consumed.
 export function P_ArchiveWorld() {
   const ps = imp_sectors();
-  const out = [];
-  for (const s of ps) out.push({ fh: s.floorheight, ch: s.ceilingheight, ll: s.lightlevel, sp: s.special, tg: s.tag });
-  return out;
+  const ls = imp_lines();
+  const sd = imp_sides();
+  const sectors = [];
+  for (const s of ps) sectors.push({
+    fh: s.floorheight, ch: s.ceilingheight,
+    fp: s.floorpic,    cp: s.ceilingpic,
+    ll: s.lightlevel,  sp: s.special, tg: s.tag,
+  });
+  const lines = [];
+  for (const l of ls) lines.push({ fl: l.flags, sp: l.special, tg: l.tag });
+  const sides = [];
+  for (const s of sd) sides.push({
+    tx: s.textureoffset, ry: s.rowoffset,
+    tt: s.toptexture,    bt: s.bottomtexture, mt: s.midtexture,
+  });
+  return { sectors, lines, sides };
 }
-export function P_UnArchiveWorld(arr) {
-  if (arr === undefined || arr === null) return;
+export function P_UnArchiveWorld(blob) {
+  if (blob === undefined || blob === null) return;
+  // Back-compat: previous serialisation was a flat sectors array.
+  const sectorArr = Array.isArray(blob) ? blob : blob.sectors;
+  const lineArr   = Array.isArray(blob) ? null : blob.lines;
+  const sideArr   = Array.isArray(blob) ? null : blob.sides;
   const ps = imp_sectors();
-  for (let i = 0; i < arr.length && i < ps.length; i++) {
-    ps[i].floorheight = arr[i].fh;
-    ps[i].ceilingheight = arr[i].ch;
-    ps[i].lightlevel = arr[i].ll;
-    ps[i].special = arr[i].sp;
-    ps[i].tag = arr[i].tg;
+  if (sectorArr !== undefined && sectorArr !== null) {
+    for (let i = 0; i < sectorArr.length && i < ps.length; i++) {
+      const a = sectorArr[i];
+      ps[i].floorheight   = a.fh;
+      ps[i].ceilingheight = a.ch;
+      if (a.fp !== undefined) ps[i].floorpic   = a.fp;
+      if (a.cp !== undefined) ps[i].ceilingpic = a.cp;
+      ps[i].lightlevel = a.ll;
+      ps[i].special    = a.sp;
+      ps[i].tag        = a.tg;
+      // p_saveg.c:188 — clear transient runtime back-links.
+      ps[i].specialdata = null;
+      ps[i].soundtarget = null;
+    }
+  }
+  if (lineArr !== null && lineArr !== undefined) {
+    const ls = imp_lines();
+    for (let i = 0; i < lineArr.length && i < ls.length; i++) {
+      ls[i].flags   = lineArr[i].fl;
+      ls[i].special = lineArr[i].sp;
+      ls[i].tag     = lineArr[i].tg;
+    }
+  }
+  if (sideArr !== null && sideArr !== undefined) {
+    const sd = imp_sides();
+    for (let i = 0; i < sideArr.length && i < sd.length; i++) {
+      sd[i].textureoffset = sideArr[i].tx;
+      sd[i].rowoffset     = sideArr[i].ry;
+      sd[i].toptexture    = sideArr[i].tt;
+      sd[i].bottomtexture = sideArr[i].bt;
+      sd[i].midtexture    = sideArr[i].mt;
+    }
   }
 }
 
-function imp_sectors() {
-  // Access dynamically (avoid import cycle on module load).
-  return globalThis.__doom_sectors || [];
-}
+function imp_sectors() { return globalThis.__doom_sectors || []; }
+function imp_lines()   { return globalThis.__doom_lines   || []; }
+function imp_sides()   { return globalThis.__doom_sides   || []; }
 
 // Thinkers — snapshot every live mobj (position, angle, momentum, state, type,
 // flags, health, target). On restore, the caller is expected to first call
