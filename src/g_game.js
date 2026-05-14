@@ -314,8 +314,13 @@ export function G_RecordDemo(name) {
 }
 export function G_WriteDemoTiccmd(cmd) {
   if (_recordBuf === null) return;
+  // g_game.c:1512 — angleturn is rounded to nearest 256 before packing:
+  // ((angleturn + 128) >> 8). The matching G_ReadDemoTiccmd left-shifts the
+  // stored byte back into the high bits (<<8), so without the +128 the
+  // playback angle is always biased one low-byte step below the recorded
+  // value, causing cumulative demo desync.
   _recordBuf.push(cmd.forwardmove & 0xff, cmd.sidemove & 0xff,
-                  (cmd.angleturn >> 8) & 0xff, cmd.buttons & 0xff);
+                  ((cmd.angleturn + 128) >> 8) & 0xff, cmd.buttons & 0xff);
 }
 export function G_StopDemo() {
   if (_recordBuf === null) return null;
