@@ -8,7 +8,7 @@ import { snd_SfxVolume, snd_MusicVolume, set_snd_SfxVolume, set_snd_MusicVolume,
   gameepisode, gamemap, gamemode } from './doomstat.js';
 import { ANG90, ANGLETOFINESHIFT, FINEMASK, finecosine, finesine } from './tables.js';
 import { R_PointToAngle2 } from './r_bsp.js';
-import { P_Random } from './m_random.js';
+import { M_Random } from './m_random.js';
 import { GameMode_t } from './doomdef.js';
 
 const NUM_CHANNELS = 16;
@@ -144,15 +144,16 @@ export function S_StartSound(origin, sfxid) {
     sfx      = linked;
   }
 
-  // s_sound.c:393 — pitch perturbation. itemup and tink stay deterministic.
-  if (sfxid !== _SFX_ITEMUP && sfxid !== _SFX_TINK) {
-    // sawhit / sawful / sawup get a smaller pitch jitter so the chainsaw
-    // tremolo is more obvious. Everything else uses the wider sweep.
-    if (sfxid >= 11 /*sfx_sawup*/ && sfxid <= 14 /*sfx_sawhit*/) {
-      pitch = (pitch + 8 - (P_Random() & 15)) | 0;
-    } else {
-      pitch = (pitch + 16 - (P_Random() & 31)) | 0;
-    }
+  // s_sound.c:326 — pitch perturbation uses M_Random, NOT P_Random.
+  // M_Random has a separate counter from P_Random precisely so cosmetic
+  // jitter like sound pitch doesn't consume demo-deterministic RNG. Using
+  // P_Random here desyncs every demo on the first sfx played.
+  if (sfxid >= 11 /*sfx_sawup*/ && sfxid <= 14 /*sfx_sawhit*/) {
+    pitch = (pitch + 8 - (M_Random() & 15)) | 0;
+    if (pitch < 0)   pitch = 0;
+    if (pitch > 255) pitch = 255;
+  } else if (sfxid !== _SFX_ITEMUP && sfxid !== _SFX_TINK) {
+    pitch = (pitch + 16 - (M_Random() & 31)) | 0;
     if (pitch < 0)   pitch = 0;
     if (pitch > 255) pitch = 255;
   }
