@@ -554,6 +554,8 @@ export async function D_DoomMain() {
     R_FlatNumForName,
     R_PrecacheLevel,
     P_SpawnMapThing,
+    P_SpawnSpecials: pSpec.P_SpawnSpecials,
+    S_Start:         S.S_Start,
   });
   // skyflatnum = R_FlatNumForName("F_SKY1") — used by r_plane.js to skip
   // drawing ceiling/floor flats that should show sky.
@@ -583,13 +585,9 @@ export async function D_DoomMain() {
     doomstat.playeringame[0] = true;
     // Stash the player_t so P_SpawnMapThing can find it when type==1 is hit.
     globalThis.__doom_playerForSpawn = player;
-    // Fresh thinker list per level — vanilla calls P_InitThinkers from
-    // P_SetupLevel (just before P_LoadThings spawns map objects).
-    P_InitThinkers();
+    // P_SetupLevel internally runs P_InitThinkers BEFORE P_LoadThings and
+    // P_SpawnSpecials AFTER, matching p_setup.c's ordering.
     P_SetupLevel(episode, map, 0, skill);
-    // P_SpawnSpecials runs AFTER sectors are loaded so it can attach light
-    // flashes / glow thinkers to the right sectors.
-    pSpec.P_SpawnSpecials();
     R_NewMap();
     // Fallback: if P_LoadThings didn't contain a player-1 mapthing (corrupt
     // map?), spawn at playerstarts[0] now so the rest of the boot doesn't

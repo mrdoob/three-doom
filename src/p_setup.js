@@ -17,7 +17,12 @@ import { FRACBITS } from './m_fixed.js';
 import { FixedDiv } from './m_fixed.js';
 import { M_ClearBox, M_AddToBox, BOXLEFT, BOXRIGHT, BOXBOTTOM, BOXTOP } from './m_bbox.js';
 import { GameMode_t, MAXPLAYERS } from './doomdef.js';
-import { gamemode, set_leveltime, playerstarts } from './doomstat.js';
+import { gamemode, set_leveltime, playerstarts,
+  set_totalkills, set_totalitems, set_totalsecret,
+  set_levelstarttic, set_bodyqueslot,
+  players, consoleplayer, deathmatch_p, set_deathmatch_p,
+  deathmatchstarts, wminfo } from './doomstat.js';
+import { P_InitThinkers } from './p_tick.js';
 import { I_Error } from './i_system.js';
 
 // ---------- Map lookup tables ----------
@@ -69,11 +74,18 @@ let R_TextureNumForName = (_n) => 0;
 let R_FlatNumForName    = (_n) => 0;
 let P_SpawnMapThing     = (_mt) => {};
 let R_PrecacheLevel     = () => {};
+// External hooks for P_SpawnSpecials / S_Start (wired by d_main after the
+// specials and sound modules are loaded).
+let _P_SpawnSpecials = null;
+let _S_Start = null;
+
 export function P_SetExternals(refs) {
   if (refs.R_TextureNumForName != null) R_TextureNumForName = refs.R_TextureNumForName;
   if (refs.R_FlatNumForName != null)    R_FlatNumForName    = refs.R_FlatNumForName;
   if (refs.P_SpawnMapThing != null)     P_SpawnMapThing     = refs.P_SpawnMapThing;
   if (refs.R_PrecacheLevel != null)     R_PrecacheLevel     = refs.R_PrecacheLevel;
+  if (refs.P_SpawnSpecials != null)     _P_SpawnSpecials    = refs.P_SpawnSpecials;
+  if (refs.S_Start != null)             _S_Start            = refs.S_Start;
 }
 
 function readName8(bytes, offset) {
@@ -344,6 +356,31 @@ export function P_GroupLines() {
 
 // ---------- P_SetupLevel ----------
 export function P_SetupLevel(episode, map, _playermask, _skill) {
+  // p_setup.c:539 — reset all per-level counters before loading anything so
+  // re-entry into the same map (warp, demo restart) starts from a clean slate.
+  set_totalkills(0);
+  set_totalitems(0);
+  set_totalsecret(0);
+  // wminfo.partime default — overwritten by g_game's pars[][] table when
+  // available. 180 matches the C default for E1/2/3.
+  if (wminfo !== null) wminfo.partime = 180;
+  // Reset per-player level counters and force a viewz refresh on first frame.
+  for (let i = 0; i < MAXPLAYERS; i++) {
+    const p = players[i];
+    if (p === null || p === undefined) continue;
+    p.killcount = 0;
+    p.itemcount = 0;
+    p.secretcount = 0;
+  }
+  if (players[consoleplayer] !== undefined && players[consoleplayer] !== null) {
+    players[consoleplayer].viewz = 1;
+  }
+  // p_setup.c:586 — initialize the thinker list BEFORE loading mobjs.
+  P_InitThinkers();
+  // Bodyque + intermission queue reset.
+  set_bodyqueslot(0);
+  set_deathmatch_p(0);
+
   set_leveltime(0);
   // Find map name (ExMy for Doom 1, MAPxx for Doom 2).
   let lumpname;
@@ -365,6 +402,9 @@ export function P_SetupLevel(episode, map, _playermask, _skill) {
   P_GroupLines();
   P_LoadThings(lumpnum + ML_THINGS);
 
-  // R_PrecacheLevel + P_SpawnSpecials wire in when those modules exist.
+  // p_setup.c:633 — spawn special sectors and queue per-tic effects.
+  if (_P_SpawnSpecials !== null) _P_SpawnSpecials();
+  // p_setup.c:634 — clear all sounds and (re)start level music.
+  if (_S_Start !== null) _S_Start();
   R_PrecacheLevel();
 }
