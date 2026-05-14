@@ -48,6 +48,10 @@ let _active = false;
 let _done   = null;
 const getPatch = V_DecodePatchToCanvas;
 const F_TEXTWAIT = 250;
+// f_finale.c:TEXTSPEED — one character per 3 tics (≈12 chars/s at 35Hz). The
+// previous port used 2/0.5 timing which produced a faster reveal than vanilla.
+const F_TEXTSPEED = 3;
+const F_TEXTSTART = 10; // tics before the first character appears
 
 export function F_StartFinale(onDone) {
   _active = true;
@@ -71,10 +75,10 @@ export function F_Responder(ev) {
 }
 
 export function F_Ticker() {
-  if (!_active) return;
+  if (_active === false) return;
   _finalecount++;
   const text = TEXTS[gameepisode] || TEXTS[1];
-  if (_stage === 0 && _finalecount > F_TEXTWAIT + text.length * 2) {
+  if (_stage === 0 && _finalecount > F_TEXTWAIT + text.length * F_TEXTSPEED) {
     _stage = 1;
     _finalecount = 0;
   }
@@ -88,7 +92,10 @@ function F_TextWrite(ctx, dx, dy, dw, dh) {
   ctx.font = `bold ${lineH}px monospace`;
   ctx.fillStyle = '#ffcf00';
   ctx.textAlign = 'left';
-  const maxChars = Math.min(text.length, (_finalecount * 0.5) | 0);
+  // f_finale.c:F_TextWrite — `count = (finalecount - 10) / TEXTSPEED`
+  // characters revealed so far. Clamped to text length.
+  const maxChars = Math.min(text.length,
+    Math.max(0, ((_finalecount - F_TEXTSTART) / F_TEXTSPEED) | 0));
   const visible = text.slice(0, maxChars);
   const lines = visible.split('\n');
   for (let i = 0; i < lines.length; i++) {
@@ -154,24 +161,27 @@ export function F_isActive() { return _active; }
 // through their attack animation. Shareware doom1.wad has no MAP30 to trigger
 // it, but the functions are here for source-map parity with f_finale.c.
 
+// f_finale.c:118 — castorder[]. HERO is the FINAL entry (the loop runs
+// monsters first, hero last). The previous port had HERO at index 0 which
+// meant the cast call started with you, not the zombieman.
 const CAST_ORDER = [
-  { name: 'OUR HERO',         spr: 'PLAY', type: 38 /*MT_PLAYER*/ },
-  { name: 'ZOMBIEMAN',        spr: 'POSS', type: 39 },
-  { name: 'SHOTGUN GUY',      spr: 'SPOS', type: 40 },
-  { name: 'HEAVY WEAPON DUDE',spr: 'CPOS', type: 41 },
-  { name: 'IMP',              spr: 'TROO', type: 2 },
-  { name: 'DEMON',            spr: 'SARG', type: 42 },
-  { name: 'LOST SOUL',        spr: 'SKUL', type: 18 },
-  { name: 'CACODEMON',        spr: 'HEAD', type: 17 },
-  { name: 'HELL KNIGHT',      spr: 'BOS2', type: 16 },
-  { name: 'BARON OF HELL',    spr: 'BOSS', type: 15 },
-  { name: 'ARACHNOTRON',      spr: 'BSPI', type: 20 },
-  { name: 'PAIN ELEMENTAL',   spr: 'PAIN', type: 22 },
-  { name: 'REVENANT',         spr: 'SKEL', type: 7  },
-  { name: 'MANCUBUS',         spr: 'FATT', type: 8  },
-  { name: 'ARCH-VILE',        spr: 'VILE', type: 3  },
+  { name: 'ZOMBIEMAN',             spr: 'POSS', type: 39 },
+  { name: 'SHOTGUN GUY',           spr: 'SPOS', type: 40 },
+  { name: 'HEAVY WEAPON DUDE',     spr: 'CPOS', type: 41 },
+  { name: 'IMP',                   spr: 'TROO', type: 2  },
+  { name: 'DEMON',                 spr: 'SARG', type: 42 },
+  { name: 'LOST SOUL',             spr: 'SKUL', type: 18 },
+  { name: 'CACODEMON',             spr: 'HEAD', type: 17 },
+  { name: 'HELL KNIGHT',           spr: 'BOS2', type: 16 },
+  { name: 'BARON OF HELL',         spr: 'BOSS', type: 15 },
+  { name: 'ARACHNOTRON',           spr: 'BSPI', type: 20 },
+  { name: 'PAIN ELEMENTAL',        spr: 'PAIN', type: 22 },
+  { name: 'REVENANT',              spr: 'SKEL', type: 7  },
+  { name: 'MANCUBUS',              spr: 'FATT', type: 8  },
+  { name: 'ARCH-VILE',             spr: 'VILE', type: 3  },
   { name: 'THE SPIDER MASTERMIND', spr: 'SPID', type: 19 },
-  { name: 'THE CYBERDEMON',   spr: 'CYBR', type: 21 },
+  { name: 'THE CYBERDEMON',        spr: 'CYBR', type: 21 },
+  { name: 'OUR HERO',              spr: 'PLAY', type: 38 /*MT_PLAYER*/ },
 ];
 let _castNum = 0, _castFrame = 0, _castTics = 0, _castActive = false, _castAttacking = false;
 
