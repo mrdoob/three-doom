@@ -10,7 +10,9 @@ import * as doomstat from './doomstat.js';
 import { gamestate, set_gamestate, gameaction, set_gameaction, gameepisode, gamemap, gameskill,
          set_gameepisode, set_gamemap, set_gameskill, set_levelstarttic, set_leveltime,
          set_totalkills, set_totalitems, set_totalsecret,
+         totalkills, totalitems, totalsecret, leveltime,
          players, playeringame, consoleplayer, gamemode, gametic } from './doomstat.js';
+import { WI_Start } from './wi_stuff.js';
 import { gameaction_t } from './d_event.js';
 import { GameMode_t, gamestate_t, skill_t } from './doomdef.js';
 import { P_Random, M_ClearRandom } from './m_random.js';
@@ -362,9 +364,39 @@ export function G_DoLoadGame() {
 }
 
 // Level completion / world transitions.
+// g_game.c:G_DoCompleted — build wbstartstruct from the level's tallies,
+// transition to GS_INTERMISSION, and start WI_*. The intermission screen
+// presses-any-key callback fires ga_worlddone, which G_DoWorldDone advances
+// to the next map.
 export function G_DoCompleted() {
-  // wbstartstruct construction would go here; for now jump to intermission.
+  // For each playing player, snapshot their kills/items/secrets/time.
+  const plyrSnap = [];
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    if (p === undefined || p === null) { plyrSnap.push({ skills: 0, sitems: 0, ssecret: 0, stime: 0, in: false }); continue; }
+    plyrSnap.push({
+      skills:  p.killcount   | 0,
+      sitems:  p.itemcount   | 0,
+      ssecret: p.secretcount | 0,
+      stime:   leveltime     | 0,
+      in:      playeringame[i] === true,
+    });
+  }
+  const wbs = {
+    epsd:      gameepisode,
+    last:      gamemap,
+    next:      gamemap + 1,
+    maxkills:  totalkills,
+    maxitems:  totalitems,
+    maxsecret: totalsecret,
+    plyr:      plyrSnap,
+    pnum:      consoleplayer,
+  };
   set_gamestate(gamestate_t.GS_INTERMISSION);
+  WI_Start(wbs, () => {
+    // Player pressed past the intermission — advance to the next map.
+    set_gameaction(gameaction_t.ga_worlddone);
+  });
 }
 export function G_DoVictory() {
   set_gamestate(gamestate_t.GS_FINALE);

@@ -24,6 +24,17 @@ function installListeners() {
           e.code === 'ControlLeft' || e.code === 'AltLeft' || e.code === 'Tab') {
         e.preventDefault?.();
       }
+      // Intermission screen — any keypress advances. Check this before
+      // automap / cheats so the press-to-continue gesture isn't mistaken
+      // for an in-game action. (gamestate_t.GS_INTERMISSION === 1)
+      const ds = await import('./doomstat.js');
+      if (ds.gamestate === 1 /*GS_INTERMISSION*/) {
+        const wi = await import('./wi_stuff.js');
+        if (wi.WI_Responder({ type: 0, data1: e.keyCode | 0 })) {
+          e.preventDefault?.();
+          return;
+        }
+      }
       // Single-shot automap controls.
       if (e.code === 'Tab') {
         (await import('./am_map.js')).AM_Toggle();

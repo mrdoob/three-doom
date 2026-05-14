@@ -198,6 +198,21 @@ function D_Display() {
       }
       if (_menuDrawer !== null) _menuDrawer(o, 0, 0, overlay.width, overlay.height);
     }
+  } else if (gamestate === gamestate_t.GS_INTERMISSION) {
+    // Black background under the intermission widgets.
+    if (renderer !== null) renderer.render(scene, camera);
+    const o = getOverlay();
+    o.imageSmoothingEnabled = false;
+    o.clearRect(0, 0, _overlayCanvas.width, _overlayCanvas.height);
+    if (_wiDrawer !== null) {
+      const cw = _overlayCanvas.width, ch = _overlayCanvas.height;
+      const scale = Math.min(cw / 320, ch / 200);
+      const dw = 320 * scale, dh = 200 * scale;
+      const dx = (cw - dw) * 0.5;
+      const dy = (ch - dh) * 0.5;
+      _wiDrawer(o, dx, dy, dw, dh);
+    }
+    if (_menuDrawer !== null) _menuDrawer(o, 0, 0, _overlayCanvas.width, _overlayCanvas.height);
   } else {
     if (renderer !== null) renderer.render(scene, camera);
     I_FinishUpdate();
@@ -228,6 +243,9 @@ let _huTicker = null;
 let _sUpdate = null;
 let _menuTicker = null;
 let _gReadDemoCmd = null;
+let _wiDrawer  = null;
+let _wiTicker  = null;
+let _wiResponder = null;
 async function D_DoomLoop() {
   _pTicker = (await import('./p_tick.js')).P_Ticker;
   _updateSprites = (await import('./r_things.js')).R_UpdateSprites;
@@ -259,6 +277,10 @@ async function D_DoomLoop() {
   });
   _huTicker = (await import('./hu_stuff.js')).HU_Ticker;
   _sUpdate  = (await import('./s_sound.js')).S_UpdateSounds;
+  const wi = await import('./wi_stuff.js');
+  _wiDrawer    = wi.WI_Drawer;
+  _wiTicker    = wi.WI_Ticker;
+  _wiResponder = wi.WI_Responder;
   function frame(now) {
     if (_lastTime === 0) _lastTime = now;
     const dt = (now - _lastTime) / 1000;
@@ -309,6 +331,9 @@ async function D_DoomLoop() {
         if (_sUpdate !== null) _sUpdate(p);
         // Animate wall/flat textures every tic.
         if (_animTextures !== null) _animTextures(doomstat.leveltime);
+      } else if (gamestate === gamestate_t.GS_INTERMISSION && _wiTicker !== null) {
+        // Drive the intermission counters + 'press key to continue' timer.
+        _wiTicker();
       }
       ticsRun++;
     }
