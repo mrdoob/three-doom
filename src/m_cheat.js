@@ -5,7 +5,21 @@
 
 import { players, consoleplayer } from './doomstat.js';
 
-function SCRAMBLE(c) { return ((c << 4) & 0xF0) | ((c >> 4) & 0x0F); }
+// C macro: bit i of input -> bit j of output. From m_cheat.h:
+//   bit 0 -> 7, bit 1 -> 6, bit 2 -> 2, bit 3 -> 4,
+//   bit 4 -> 3, bit 5 -> 5, bit 6 -> 1, bit 7 -> 0.
+function SCRAMBLE(a) {
+  return (
+    ((a & 1) << 7) +
+    ((a & 2) << 5) +
+    (a & 4) +
+    ((a & 8) << 1) +
+    ((a & 16) >> 1) +
+    (a & 32) +
+    ((a & 64) >> 5) +
+    ((a & 128) >> 7)
+  );
+}
 const xlate = new Uint8Array(256);
 for (let i = 0; i < 256; i++) xlate[i] = SCRAMBLE(i);
 
@@ -16,28 +30,50 @@ export function makeCheatSeq(seqStr) {
   return { sequence: bytes, p: 0 };
 }
 
+// Faithful port of m_cheat.c:cht_CheckCheat. The order is:
+//   1. If the current slot is 0 (uninitialized parameter slot), capture the
+//      raw key into the sequence so cht_GetParam can read it back later.
+//   2. Else if the scrambled key matches the current slot, advance.
+//   3. Else reset to the start of the sequence.
+//   4. Then look at the (possibly advanced) slot: skip past the '1'
+//      parameter separator if present, and return success on 0xff terminator.
 export function cht_CheckCheat(cht, key) {
-  if (cht.sequence[cht.p] === 1) cht.p++;
-  if (cht.sequence[cht.p] === 0xff) { cht.p = 0; return 1; }
-  if (cht.sequence[cht.p] === xlate[key & 0xff]) {
+  let rc = 0;
+  if (cht.sequence[cht.p] === 0) {
+    cht.sequence[cht.p] = key & 0xff;
     cht.p++;
-    if (cht.sequence[cht.p] === 0xff) { cht.p = 0; return 1; }
-    return 0;
+  } else if (xlate[key & 0xff] === cht.sequence[cht.p]) {
+    cht.p++;
+  } else {
+    cht.p = 0;
   }
-  cht.p = 0;
-  return 0;
+  if (cht.sequence[cht.p] === 1) {
+    cht.p++;
+  } else if (cht.sequence[cht.p] === 0xff) {
+    cht.p = 0;
+    rc = 1;
+  }
+  return rc;
 }
 
+// Faithful port of m_cheat.c:cht_GetParam. Walks past the first '1' marker
+// then copies stored keys into buffer, zeroing each slot back to the "empty
+// parameter" state, until terminator or first zero. Final write null-terminates
+// buffer when stopping at 0xff.
 export function cht_GetParam(cht, buffer) {
-  let i = 0, j = 0;
-  while (cht.sequence[j] !== 1 && j < cht.sequence.length) j++;
-  j++;
-  while (cht.sequence[j] !== 0xff && j < cht.sequence.length) {
-    buffer[i++] = cht.sequence[j];
-    cht.sequence[j] = 0;
-    j++;
-  }
-  buffer[i] = 0;
+  const seq = cht.sequence;
+  let p = 0;
+  while (p < seq.length && seq[p] !== 1) p++;
+  p++;
+  let bi = 0;
+  let c;
+  do {
+    c = seq[p];
+    buffer[bi++] = c;
+    seq[p] = 0;
+    p++;
+  } while (c !== 0 && p < seq.length && seq[p] !== 0xff);
+  if (p < seq.length && seq[p] === 0xff) buffer[bi] = 0;
 }
 
 // Active cheat sequences (Doom 1).
