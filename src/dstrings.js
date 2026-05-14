@@ -40,13 +40,15 @@ export const GOTPLASMA   = 'You got the plasma gun!';
 export const GOTSHOTGUN  = 'You got the shotgun!';
 export const GOTSHOTGUN2 = 'You got the super shotgun!';
 
-// Locked doors.
-export const PD_BLUEK   = 'You need a blue key to activate this object';
-export const PD_REDK    = 'You need a red key to activate this object';
-export const PD_YELLOWK = 'You need a yellow key to activate this object';
-export const PD_BLUEO   = 'You need a blue key to open this door';
-export const PD_REDO    = 'You need a red key to open this door';
-export const PD_YELLOWO = 'You need a yellow key to open this door';
+// Locked doors. d_englsh.h:125-130 — O suffix = "activate this object"
+// (used by switch line-actions), K suffix = "open this door" (manual door
+// line-actions). The previous mapping had these pairwise swapped.
+export const PD_BLUEO   = 'You need a blue key to activate this object';
+export const PD_REDO    = 'You need a red key to activate this object';
+export const PD_YELLOWO = 'You need a yellow key to activate this object';
+export const PD_BLUEK   = 'You need a blue key to open this door';
+export const PD_REDK    = 'You need a red key to open this door';
+export const PD_YELLOWK = 'You need a yellow key to open this door';
 
 // Console / cheat / status messages.
 export const GGSAVED       = 'game saved.';

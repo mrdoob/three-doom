@@ -161,7 +161,7 @@ export const E1TEXT =
   "It stinks like rotten meat, but looks\nlike the lost Deimos base.  Looks like\n" +
   "you're stuck on The Shores of Hell.\nThe only way out is through.\n\n" +
   "To continue the DOOM experience, play\nThe Shores of Hell and its amazing\n" +
-  "sequel, Inferno!";
+  "sequel, Inferno!\n";
 
 // --- Cheats (vanilla scramble-obfuscated; we expose the plaintext sequences) ---
 export const IDDQD    = 'iddqd';
