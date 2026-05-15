@@ -4,7 +4,7 @@
 // so monsters spot and pursue the player. The boss specials and many of the
 // flashy attacks (Vile resurrect, Mancubus fireball spread, etc.) are TODO.
 
-import { P_RegisterAction, states, mobjinfo, actionRegistry } from './info.js';
+import { P_RegisterAction, states, mobjinfo, actionRegistry, S_BRAINEXPLODE1 } from './info.js';
 import { P_SetMobjState, MF_SHOOTABLE, MF_AMBUSH, MF_JUSTHIT, MF_JUSTATTACKED, MF_SOLID, MF_SKULLFLY, P_SpawnMissile, P_SpawnMobj, P_SpawnPuff, P_RemoveMobj } from './p_mobj.js';
 import { P_TeleportMove } from './p_map.js';
 import { players, consoleplayer, playeringame, gameepisode, gamemap, gamemode, gameskill, gametic } from './doomstat.js';
@@ -14,7 +14,8 @@ import { P_CheckSight } from './p_sight.js';
 import { R_PointToAngle2 } from './r_bsp.js';
 import { MT_BRUISER, MT_CYBORG, MT_SPIDER, MT_HEADSHOT, MT_TROOPSHOT, MT_BRUISERSHOT, MT_FATSO, MT_FATSHOT, MT_VILE, MT_UNDEAD, MT_FIRE, MT_TRACER, MT_SKULL, MT_BABY, MT_PAIN, MT_BOSSBRAIN, MT_BOSSSPIT, MT_BOSSTARGET, MT_SPAWNSHOT, MT_SPAWNFIRE, MT_ROCKET, MT_ARACHPLAZ, MT_TROOP, MT_SERGEANT, MT_SHADOWS, MT_HEAD, MT_KNIGHT } from './info.js';
 import { sfx_claw } from './sounds.js';
-import { EV_DoFloor, lowerFloorToLowest } from './p_floor.js';
+import { EV_DoFloor, lowerFloorToLowest, raiseToTexture } from './p_floor.js';
+import { EV_DoDoor } from './p_doors.js';
 import { P_Random } from './m_random.js';
 
 // External wiring.
@@ -528,39 +529,89 @@ P_RegisterAction('A_SkullAttack', (actor) => {
   actor.momz = (((actor.target.z + (actor.target.height >> 1) - actor.z) / dist) | 0);
 });
 
-// A_BossDeath — when the last boss-class monster on the level dies, fire the
-// canonical episode finale: E1M8 lower-floor (tag 666), E2M8/E3M8 exit.
+// p_enemy.c:1609 — A_BossDeath. When the last boss-class monster on the
+// canonical boss level dies, fire the level finale. Covers Doom 1 ExM8,
+// Doom 2 MAP07 (Mancubus → tag 666 lower-floor, Arachno → tag 667 raise-
+// to-texture), and Ultimate Doom E4M6 / E4M8.
 P_RegisterAction('A_BossDeath', (mo) => {
-  // Episode/map filter (Doom 1 only — Doom 2 commercial uses other triggers).
-  if (gamemode === GameMode_t.commercial) return;
-  if (gamemap !== 8) return;
-  if (gameepisode === 1 && mo.type !== MT_BRUISER) return;
-  if (gameepisode === 2 && mo.type !== MT_CYBORG)  return;
-  if (gameepisode === 3 && mo.type !== MT_SPIDER)  return;
+  // Episode/map filter.
+  if (gamemode === GameMode_t.commercial) {
+    if (gamemap !== 7) return;
+    if (mo.type !== MT_FATSO && mo.type !== MT_BABY) return;
+  } else {
+    switch (gameepisode) {
+      case 1:
+        if (gamemap !== 8) return;
+        if (mo.type !== MT_BRUISER) return;
+        break;
+      case 2:
+        if (gamemap !== 8) return;
+        if (mo.type !== MT_CYBORG) return;
+        break;
+      case 3:
+        if (gamemap !== 8) return;
+        if (mo.type !== MT_SPIDER) return;
+        break;
+      case 4:
+        if (gamemap === 6) { if (mo.type !== MT_CYBORG) return; }
+        else if (gamemap === 8) { if (mo.type !== MT_SPIDER) return; }
+        else return;
+        break;
+      default:
+        if (gamemap !== 8) return;
+    }
+  }
+
   // At least one player alive.
   let anyAlive = false;
   for (let i = 0; i < players.length; i++) {
-    if (playeringame[i] && players[i] && players[i].health > 0) { anyAlive = true; break; }
+    if (playeringame[i] === true && players[i] !== null && players[i] !== undefined && players[i].health > 0) {
+      anyAlive = true; break;
+    }
   }
-  if (!anyAlive) return;
+  if (anyAlive === false) return;
+
   // All other monsters of the same type must be dead.
-  if (typeof globalThis.__doom_thinkercap !== 'undefined') {
-    const cap = globalThis.__doom_thinkercap;
+  const cap = globalThis.__doom_thinkercap;
+  if (cap !== undefined) {
     let th = cap.next;
     while (th !== cap) {
       if (th.__mobj !== undefined && th.__mobj !== mo && th.__mobj.type === mo.type && th.__mobj.health > 0) return;
-      if (th !== mo && th.type === mo.type && th.health > 0) return;
       th = th.next;
     }
   }
-  // Fire the level finale.
-  if (gameepisode === 1) {
-    // Tag 666 lower-floor-to-lowest unveils the exit on E1M8.
-    EV_DoFloor({ tag: 666 }, lowerFloorToLowest);
-  } else if (typeof globalThis.__G_ExitLevel === 'function') {
-    // E2M8 / E3M8 — directly trigger the level exit.
-    globalThis.__G_ExitLevel();
+
+  // Fire the finale.
+  const junk = { tag: 0, sidenum: [-1, -1] };
+  if (gamemode === GameMode_t.commercial) {
+    if (mo.type === MT_FATSO) {
+      junk.tag = 666;
+      EV_DoFloor(junk, lowerFloorToLowest);
+      return;
+    }
+    if (mo.type === MT_BABY) {
+      junk.tag = 667;
+      EV_DoFloor(junk, raiseToTexture);
+      return;
+    }
+  } else if (gameepisode === 1) {
+    junk.tag = 666;
+    EV_DoFloor(junk, lowerFloorToLowest);
+    return;
+  } else if (gameepisode === 4) {
+    if (gamemap === 6) {
+      junk.tag = 666;
+      EV_DoDoor(junk, 'blazeOpen');
+      return;
+    }
+    if (gamemap === 8) {
+      junk.tag = 666;
+      EV_DoFloor(junk, lowerFloorToLowest);
+      return;
+    }
   }
+  // E2M8 / E3M8 / fallthrough — just exit the level.
+  if (typeof globalThis.__G_ExitLevel === 'function') globalThis.__G_ExitLevel();
 });
 
 // ---------- Doom 2 monster actions ----------
@@ -815,8 +866,9 @@ P_RegisterAction('A_KeenDie', (mo) => {
       th = th.next;
     }
   }
-  // EV_DoDoor(open) on tag 666 — port lazily to avoid cycle.
-  import('./p_doors.js').then(({ EV_DoDoor }) => EV_DoDoor({ tag: 666 }, 'open'));
+  // p_enemy.c:A_KeenDie — open every sector tagged 666. Use a synthetic
+  // line {tag: 666} so EV_DoDoor's iteration finds the matching sectors.
+  EV_DoDoor({ tag: 666, sidenum: [-1, -1] }, 'open');
 });
 
 // Icon of Sin (boss brain) — minimum behaviour to play through MAP30.
@@ -842,7 +894,7 @@ P_RegisterAction('A_BrainScream', (mo) => {
     const th = globalThis.__P_SpawnMobj(x, y, z, MT_ROCKET);
     if (th !== null) {
       th.momz = P_Random() * 512;
-      P_SetMobjState(th, 799 /*S_BRAINEXPLODE1 — index varies by table*/);
+      P_SetMobjState(th, S_BRAINEXPLODE1);
       th.tics -= P_Random() & 7;
       if (th.tics < 1) th.tics = 1;
     }
@@ -857,8 +909,8 @@ P_RegisterAction('A_BrainExplode', (mo) => {
   const th = globalThis.__P_SpawnMobj(x, y, z, MT_ROCKET);
   if (th !== null) {
     th.momz = P_Random() * 512;
-    // p_enemy.c:1888 — set to S_BRAINEXPLODE1 (799 in info.js).
-    P_SetMobjState(th, 799 /*S_BRAINEXPLODE1*/);
+    // p_enemy.c:1888 — set to S_BRAINEXPLODE1.
+    P_SetMobjState(th, S_BRAINEXPLODE1);
     th.tics -= P_Random() & 7;
     if (th.tics < 1) th.tics = 1;
   }
