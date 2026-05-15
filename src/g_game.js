@@ -358,11 +358,22 @@ export function G_ReadDemoTiccmd(cmd) {
 export function G_PlayDemo(nameOrBytes) { G_DeferedPlayDemo(nameOrBytes); }
 export function G_TimeDemo(nameOrBytes) { G_DeferedPlayDemo(nameOrBytes); }
 
-// G_CheckDemoStatus — called when the DEMOMARKER is hit. Stop playback and
-// hand control back to the title-screen attract sequence.
+// G_CheckDemoStatus — called when the DEMOMARKER is hit. Stop playback,
+// reset all the global flags vanilla's G_CheckDemoStatus zeroes so the
+// next session/demo doesn't inherit demo1's fast/respawn/netgame state,
+// and hand control back to the title-screen attract sequence.
 export function G_CheckDemoStatus() {
-  if (!doomstat.demoplayback) return false;
+  if (doomstat.demoplayback !== true) return false;
   doomstat.set_demoplayback(false);
+  doomstat.set_netgame?.(false);
+  doomstat.set_deathmatch?.(0);
+  doomstat.set_respawnparm?.(false);
+  doomstat.set_fastparm?.(false);
+  doomstat.set_nomonsters?.(false);
+  if (doomstat.playeringame !== undefined) {
+    for (let i = 1; i < 4 /*MAXPLAYERS*/; i++) doomstat.playeringame[i] = false;
+  }
+  doomstat.set_consoleplayer?.(0);
   _demoBytes = null; _demoPos = 0;
   if (_onDemoEnd !== null) _onDemoEnd();
   return true;
