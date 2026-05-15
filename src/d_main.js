@@ -349,30 +349,14 @@ async function D_DoomLoop() {
 
 // ---------- IWAD detection ----------
 
-const WAD_CANDIDATES = [
-  // Order: try retail/registered first, then commercial, then shareware.
-  { path: 'doom.wad',    mode: GameMode_t.registered },
-  { path: 'doomu.wad',   mode: GameMode_t.retail },
-  { path: 'doom2.wad',   mode: GameMode_t.commercial },
-  { path: 'plutonia.wad',mode: GameMode_t.commercial },
-  { path: 'tnt.wad',     mode: GameMode_t.commercial },
-  { path: 'doom1.wad',   mode: GameMode_t.shareware },
-];
-
 async function findIwad() {
-  // Allow -iwad <name> URL param.
+  // Allow -iwad <name> URL param to override the default.
   const i = M_CheckParm('-iwad');
   if (i !== 0 && i < myargc - 1) {
     const name = myargv[i + 1];
     return await fetchWad(name, GameMode_t.indetermined);
   }
-  for (const c of WAD_CANDIDATES) {
-    try {
-      const r = await fetch(c.path, { method: 'HEAD' });
-      if (r.ok) return await fetchWad(c.path, c.mode);
-    } catch (_) { /* keep trying */ }
-  }
-  I_Error('Could not find an IWAD (place doom1.wad / doom.wad / doom2.wad next to index.html)');
+  return await fetchWad('doom1.wad', GameMode_t.shareware);
 }
 
 async function fetchWad(path, mode) {
