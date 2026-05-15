@@ -198,6 +198,12 @@ export function R_RegisterMobjSprite(mobj) {
   _liveSprites.push({ sprite, mobj });
 }
 
+// info.c state.frame layout — high bit FF_FULLBRIGHT marks fullbright frames
+// (projectiles, fireballs, plasma). The low 15 bits FF_FRAMEMASK index into
+// sprite_t.spriteframes.
+const FF_FULLBRIGHT = 0x8000;
+const FF_FRAMEMASK  = 0x7fff;
+
 export function R_UpdateSprites() {
   for (const entry of _liveSprites) {
     const mo = entry.mobj;
@@ -206,7 +212,7 @@ export function R_UpdateSprites() {
     if (st === undefined) continue;
     const sd = sprites[st.sprite];
     if (sd === undefined || sd.numframes === 0) continue;
-    const frame = st.frame & 0x7fff;
+    const frame = st.frame & FF_FRAMEMASK;
     if (frame >= sd.numframes) continue;
     const sf = sd.spriteframes[frame];
     // Pick rotation: 8 segments around the thing. R_PointToAngle2 → angle
@@ -247,6 +253,17 @@ export function R_UpdateSprites() {
       mo.z / 65536 + t.offsetY - t.h / 2,
       -mo.y / 65536,
     );
+    // Sector lighting: vanilla r_things.c:R_ProjectSprite picks a colormap row
+    // from the sector's lightlevel (and distance, via spritelights[]); we
+    // approximate by tinting the sprite material with the lightlevel scaled
+    // 0..1. FF_FULLBRIGHT (projectiles, fireballs, plasma) overrides.
+    const fullbright = (st.frame & FF_FULLBRIGHT) !== 0;
+    let light = 1;
+    if (!fullbright && mo.subsector !== null && mo.subsector.sector !== null) {
+      light = (mo.subsector.sector.lightlevel | 0) / 255;
+      if (light < 0) light = 0; else if (light > 1) light = 1;
+    }
+    entry.sprite.material.color.setRGB(light, light, light);
     if (entry.sprite.visible === false) entry.sprite.visible = true;
   }
 }

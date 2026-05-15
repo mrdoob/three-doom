@@ -134,11 +134,9 @@ void main() {
   } else {
     // r_main.c R_InitLightTables — startMap is vanilla's *far-distance*
     // darkness for the sector. Close is brighter by up to MAXLIGHTSCALE/4
-    // (≈ 12 rows). Vanilla:
-    //   level = startMap - j/4           // j=0 (far) → startMap; j=47 (close) → startMap-11.75
-    // We replace `-j/4` with `(distMap - 12)`, where distMap saturates to
-    // ~12 at far range. Same min/max behaviour, sign-flipped to match our
-    // "depth grows with distance" sense.
+    // (~ 12 rows). Vanilla: level = startMap - j/4 with j=0 (far) yielding
+    // startMap and j=47 (close) yielding startMap-11.75. We replace -j/4
+    // with (distMap - 12); distMap saturates to ~12 at far range.
     float lightIdx = floor(vColor.r * 15.0 + 0.001);   // 0..15
     float startMap = (15.0 - lightIdx) * 4.0;          // 0..60 (vanilla far-end darkness)
     float distMap  = clamp(vViewDepth * (12.0 / 1024.0), 0.0, 12.0);
