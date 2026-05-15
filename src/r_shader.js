@@ -132,14 +132,17 @@ void main() {
     // Invuln / light-amp visor: shader sees a fixed colormap row.
     row = fixedColormap;
   } else {
-    // Sector light comes in via vertex colour (r=g=b = lightlevel/255).
+    // r_main.c R_InitLightTables — startMap is vanilla's *far-distance*
+    // darkness for the sector. Close is brighter by up to MAXLIGHTSCALE/4
+    // (≈ 12 rows). Vanilla:
+    //   level = startMap - j/4           // j=0 (far) → startMap; j=47 (close) → startMap-11.75
+    // We replace `-j/4` with `(distMap - 12)`, where distMap saturates to
+    // ~12 at far range. Same min/max behaviour, sign-flipped to match our
+    // "depth grows with distance" sense.
     float lightIdx = floor(vColor.r * 15.0 + 0.001);   // 0..15
-    float startMap = (15.0 - lightIdx) * 4.0;          // 0..60
-    // Distance attenuation. Vanilla's j ∈ 0..47 maps to row += j/4 (≈ 0..12).
-    // viewDepth is in world units; pick a scale that ramps to ~12 by ~768
-    // world units (matches a typical Doom corridor length).
-    float distMap = clamp(vViewDepth * (12.0 / 768.0), 0.0, 12.0);
-    row = clamp(startMap + distMap - extralight * 8.0, 0.0, 31.0);
+    float startMap = (15.0 - lightIdx) * 4.0;          // 0..60 (vanilla far-end darkness)
+    float distMap  = clamp(vViewDepth * (12.0 / 1024.0), 0.0, 12.0);
+    row = clamp(startMap + distMap - 12.0 - extralight * 8.0, 0.0, 31.0);
   }
 
   // Sample the colormap remap: x = palIdx, y = row/(rows-1) for 34 rows.
