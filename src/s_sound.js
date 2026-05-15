@@ -11,7 +11,10 @@ import { R_PointToAngle2 } from './r_bsp.js';
 import { M_Random } from './m_random.js';
 import { GameMode_t } from './doomdef.js';
 
-const NUM_CHANNELS = 16;
+// s_sound.h MAX_CHANNELS = 8 in vanilla. The m_misc.c config default for
+// snd_channels is 3 (likely a leftover from DMX tuning); 8 matches the
+// release-build cap and what most ports ship with.
+const NUM_CHANNELS = 8;
 // Each channel: { sfxinfo, origin (mobj or null), handle }
 const channels = new Array(NUM_CHANNELS);
 for (let i = 0; i < NUM_CHANNELS; i++) channels[i] = { sfxinfo: null, origin: null, handle: 0 };

@@ -6,6 +6,7 @@
 import { ticcmd_t } from './d_ticcmd.js';
 import { mobj_t, MF_NOCLIP, MF_JUSTATTACKED, ONFLOORZ } from './p_mobj.js';
 import { weapontype_t, NUMWEAPONS } from './doomdef.js';
+import { S_PLAY, S_PLAY_RUN1 } from './info.js';
 import * as doomstat from './doomstat.js';
 
 export const VIEWHEIGHT = 41 * 65536;
@@ -133,8 +134,8 @@ export function P_MovePlayer(player) {
   if (cmd.sidemove !== 0 && _onground) {
     P_Thrust(player, (player.mo.angle - 0x40000000) >>> 0, cmd.sidemove * 2048);
   }
-  if ((cmd.forwardmove !== 0 || cmd.sidemove !== 0) && player.mo.state === 149 /*S_PLAY*/) {
-    if (_PMobjMod !== null) _PMobjMod.P_SetMobjState(player.mo, 150 /*S_PLAY_RUN1*/);
+  if ((cmd.forwardmove !== 0 || cmd.sidemove !== 0) && player.mo.state === S_PLAY) {
+    if (_PMobjMod !== null) _PMobjMod.P_SetMobjState(player.mo, S_PLAY_RUN1);
   }
 }
 

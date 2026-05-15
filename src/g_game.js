@@ -205,11 +205,19 @@ export function G_DeferedInitNew(skill, episode, map) {
 }
 
 export function G_DoNewGame() {
-  // Vanilla g_game.c::G_DoNewGame clears the playback/netgame flags before
-  // initialising the new level — otherwise a demo interrupted by `New Game`
-  // keeps feeding the player's ticcmd from the demo bytes.
+  // g_game.c:1373 G_DoNewGame — restore the global flags vanilla resets so a
+  // demo or netgame interrupted by 'New Game' doesn't leak its mode into
+  // the fresh game.
   doomstat.set_demoplayback(false);
   doomstat.set_netgame?.(false);
+  doomstat.set_deathmatch?.(0);
+  doomstat.set_respawnparm?.(false);
+  doomstat.set_fastparm?.(false);
+  doomstat.set_nomonsters?.(false);
+  for (let i = 1; i < 4 /*MAXPLAYERS*/; i++) {
+    if (doomstat.playeringame !== undefined) doomstat.playeringame[i] = false;
+  }
+  doomstat.set_consoleplayer?.(0);
   if (_deferred !== null && _deferred.kind === 'newgame') {
     G_InitNew(_deferred.skill, _deferred.episode, _deferred.map);
     _deferred = null; // consumed; G_DoLoadLevel shouldn't re-run G_InitNew.

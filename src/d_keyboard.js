@@ -126,6 +126,10 @@ export const D_KeyboardInput = {
     cmd.sidemove    = 0;
     cmd.angleturn   = 0;
     cmd.buttons     = 0;
+    // g_game.c:328 — vanilla pulls a queued chat character every tic. We
+    // don't ship chat, but match the byte layout so demos record/play with
+    // a deterministic chatchar slot.
+    cmd.chatchar    = 0;
     // g_game.c:175 — vanilla movement tables.
     //   forwardmove[2] = { 25, 50 }
     //   sidemove[2]    = { 24, 40 }

@@ -10,9 +10,9 @@ import { MT_MISC0, MT_MISC1, MT_MISC2, MT_MISC3, MT_MISC4, MT_MISC5, MT_MISC6,
          MT_CLIP, MT_MISC17, MT_MISC18, MT_MISC19, MT_MISC20, MT_MISC21,
          MT_MISC22, MT_MISC23, MT_MISC24, MT_MISC25, MT_CHAINGUN, MT_MISC26,
          MT_MISC27, MT_MISC28, MT_SHOTGUN,
-         MT_POSSESSED, MT_SHOTGUY, MT_CHAINGUY, MT_SKULL, MT_VILE } from './info.js';
+         MT_POSSESSED, MT_SHOTGUY, MT_CHAINGUY, MT_WOLFSS, MT_SKULL, MT_VILE } from './info.js';
 // Re-export so p_inter.js owns the MT_* constants needed by P_KillMobj's drop logic.
-import { ammotype_t, weapontype_t } from './doomdef.js';
+import { ammotype_t, weapontype_t, skill_t } from './doomdef.js';
 import { P_Random } from './m_random.js';
 
 // Externals (wired at init).
@@ -44,7 +44,7 @@ export function P_GiveAmmo(player, ammo, num) {
   if (player.ammo[ammo] >= player.maxammo[ammo]) return false;
   num = (num !== 0) ? num * clipammo[ammo] : (clipammo[ammo] >> 1);
   // p_inter.c:95-101 — baby/nightmare get double ammo pickups.
-  if (gameskill === 0 /*sk_baby*/ || gameskill === 4 /*sk_nightmare*/) num <<= 1;
+  if (gameskill === skill_t.sk_baby || gameskill === skill_t.sk_nightmare) num <<= 1;
   const oldammo = player.ammo[ammo];
   player.ammo[ammo] = Math.min(player.maxammo[ammo], player.ammo[ammo] + num);
   // p_inter.c:113-157 — auto-switch up when we were dry.
@@ -234,8 +234,6 @@ import { R_PointToAngle2 } from './r_bsp.js';
 import { FixedMul } from './m_fixed.js';
 import { gameskill, players as _players, consoleplayer, netgame } from './doomstat.js';
 
-const sk_baby = 0;
-
 export function P_KillMobj(source, target) {
   if (target.info === null) return;
   target.flags &= ~(MF_SHOOTABLE | MF_FLOAT | MF_SKULLFLY);
@@ -271,9 +269,11 @@ export function P_KillMobj(source, target) {
   if (target.tics < 1) target.tics = 1;
   // Drop stuff for the human enemies that carry pickups.
   let item = -1;
-  if (target.type === MT_POSSESSED) item = MT_CLIP;
-  else if (target.type === MT_SHOTGUY)  item = MT_SHOTGUN;
+  if (target.type === MT_POSSESSED)    item = MT_CLIP;
+  else if (target.type === MT_SHOTGUY) item = MT_SHOTGUN;
   else if (target.type === MT_CHAINGUY) item = MT_CHAINGUN;
+  // p_inter.c:751 — Doom 2 SS drops a clip.
+  else if (target.type === MT_WOLFSS)  item = MT_CLIP;
   if (item >= 0 && typeof globalThis.__P_SpawnMobj === 'function') {
     const mo = globalThis.__P_SpawnMobj(target.x, target.y, ONFLOORZ, item);
     if (mo !== null) mo.flags |= 0x20000 /*MF_DROPPED*/;
@@ -288,7 +288,7 @@ export function P_DamageMobj(target, inflictor, source, damage) {
     target.momx = 0; target.momy = 0; target.momz = 0;
   }
   const player = target.player;
-  if (player !== null && gameskill === sk_baby) damage >>= 1;
+  if (player !== null && gameskill === skill_t.sk_baby) damage >>= 1;
   // Damage thrust (knock-back). Skipped for chainsaw to keep target in reach.
   if (inflictor !== null && (target.flags & MF_NOCLIP) === 0 &&
       (source === null || source.player === null ||
