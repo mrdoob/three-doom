@@ -36,11 +36,11 @@ let _detailLevel  = 0;  // 0=high, 1=low
 // _screenblocks is the corresponding renderer "screen blocks" value (3..11)
 // the C code passes to R_SetViewSize. They move together: m_menu.c:1152 has
 // `screenblocks-- ; screenSize--` and the inverse for grow.
-// Vanilla default is screenblocks=10 (status bar visible, view fills the
-// rest of the screen with no border). _screenSize is the slider position
-// derived from screenblocks-3 — so 10-3 = 7. screenblocks=11 hides the bar.
-let _screenSize   = 7;
-let _screenblocks = 10;
+// m_misc.c:279 — vanilla default is screenblocks=9 (status bar visible,
+// view inset by one step inside a border). The matching slider position
+// is screenSize = screenblocks - 3 = 6 (m_menu.c:1854).
+let _screenSize   = 6;
+let _screenblocks = 9;
 let _messages     = 1;
 let _mouseSens    = 5;
 
