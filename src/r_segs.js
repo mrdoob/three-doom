@@ -143,9 +143,9 @@ export function R_BuildWalls(scene) {
     const light = lightlevel / 255;
     for (let i = 0; i < 4; i++) b.colors.push(light, light, light);
     if (frontFacing === true) {
-      b.indices.push(baseIdx, baseIdx + 2, baseIdx + 1, baseIdx, baseIdx + 3, baseIdx + 2);
-    } else {
       b.indices.push(baseIdx, baseIdx + 1, baseIdx + 2, baseIdx, baseIdx + 2, baseIdx + 3);
+    } else {
+      b.indices.push(baseIdx, baseIdx + 2, baseIdx + 1, baseIdx, baseIdx + 3, baseIdx + 2);
     }
     return baseIdx;
   }
