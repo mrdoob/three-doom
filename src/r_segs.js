@@ -111,8 +111,14 @@ export function R_BuildWalls(scene) {
   const opaqueBuckets = new Map(); // texnum -> bucket
   const maskedBuckets = new Map(); // texnum -> bucket
 
+  // frontFacing = true → triangle winding makes the normal point toward the
+  // Doom-front side of the linedef (FrontSide material then renders the wall
+  // only to viewers in the front sector). frontFacing = false → normal points
+  // toward Doom-back, visible only from the back sector. Both layouts keep
+  // the same vertex/UV order (u0 at v1, u1 at v2), so each sidedef's
+  // textureoffset anchors correctly.
   function pushQuad(buckets, texnum, x1, y1, x2, y2, zBottom, zTop,
-                    uOffset, anchorY, rowoffset, lightlevel) {
+                    uOffset, anchorY, rowoffset, lightlevel, frontFacing) {
     if (texnum <= 0) return -1;
     const tex = textures[texnum];
     if (tex === undefined) return -1;
@@ -136,7 +142,11 @@ export function R_BuildWalls(scene) {
     b.uvs.push(u0, vBottom, u1, vBottom, u1, vTop, u0, vTop);
     const light = lightlevel / 255;
     for (let i = 0; i < 4; i++) b.colors.push(light, light, light);
-    b.indices.push(baseIdx, baseIdx + 1, baseIdx + 2, baseIdx, baseIdx + 2, baseIdx + 3);
+    if (frontFacing === true) {
+      b.indices.push(baseIdx, baseIdx + 2, baseIdx + 1, baseIdx, baseIdx + 3, baseIdx + 2);
+    } else {
+      b.indices.push(baseIdx, baseIdx + 1, baseIdx + 2, baseIdx, baseIdx + 2, baseIdx + 3);
+    }
     return baseIdx;
   }
 
@@ -176,7 +186,7 @@ export function R_BuildWalls(scene) {
       const texH = _texH(sd0.midtexture);
       const anchor = dontPegBottom ? (frontFloor + texH) : frontCeiling;
       const bi = pushQuad(opaqueBuckets, sd0.midtexture, x1, y1, x2, y2, frontFloor, frontCeiling,
-        sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight);
+        sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true);
       if (bi >= 0) attachContrib(front, {
         bucket: opaqueBuckets.get(sd0.midtexture), baseIdx: bi, front, back: null,
         kind: 'one-sided', rowoffset: sd0.rowoffset/65536, texH,
@@ -195,7 +205,7 @@ export function R_BuildWalls(scene) {
         const texH = _texH(sd0.toptexture);
         const anchor = dontPegTop ? frontCeiling : (backCeiling + texH);
         const bi = pushQuad(opaqueBuckets, sd0.toptexture, x1, y1, x2, y2, backCeiling, frontCeiling,
-          sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight);
+          sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true);
         if (bi >= 0) {
           const c = { bucket: opaqueBuckets.get(sd0.toptexture), baseIdx: bi, front, back,
             kind: 'upper-front', rowoffset: sd0.rowoffset/65536, texH,
@@ -210,7 +220,7 @@ export function R_BuildWalls(scene) {
         // through the lower section (vanilla r_segs.c rw_bottomtexturemid = worldtop).
         const anchor = dontPegBottom ? frontCeiling : backFloor;
         const bi = pushQuad(opaqueBuckets, sd0.bottomtexture, x1, y1, x2, y2, frontFloor, backFloor,
-          sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight);
+          sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true);
         if (bi >= 0) {
           const c = { bucket: opaqueBuckets.get(sd0.bottomtexture), baseIdx: bi, front, back,
             kind: 'lower-front', rowoffset: sd0.rowoffset/65536, texH,
@@ -227,7 +237,7 @@ export function R_BuildWalls(scene) {
           const texH = _texH(sd0.midtexture);
           const anchor = dontPegBottom ? (yBottom + texH) : yTop;
           const bi = pushQuad(maskedBuckets, sd0.midtexture, x1, y1, x2, y2, yBottom, yTop,
-            sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight);
+            sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true);
           if (bi >= 0) {
             const c = { bucket: maskedBuckets.get(sd0.midtexture), baseIdx: bi, front, back,
               kind: 'middle-front', rowoffset: sd0.rowoffset/65536, texH,
@@ -243,8 +253,8 @@ export function R_BuildWalls(scene) {
         if (backCeiling > frontCeiling) {
           const texH = _texH(sd1.toptexture);
           const anchor = dontPegTop ? backCeiling : (frontCeiling + texH);
-          const bi = pushQuad(opaqueBuckets, sd1.toptexture, x2, y2, x1, y1, frontCeiling, backCeiling,
-            sd1.textureoffset / 65536, anchor, sd1.rowoffset / 65536, backLight);
+          const bi = pushQuad(opaqueBuckets, sd1.toptexture, x1, y1, x2, y2, frontCeiling, backCeiling,
+            sd1.textureoffset / 65536, anchor, sd1.rowoffset / 65536, backLight, false);
           if (bi >= 0) {
             const c = { bucket: opaqueBuckets.get(sd1.toptexture), baseIdx: bi, front, back,
               kind: 'upper-back', rowoffset: sd1.rowoffset/65536, texH,
@@ -255,8 +265,8 @@ export function R_BuildWalls(scene) {
         if (frontFloor > backFloor) {
           const texH = _texH(sd1.bottomtexture);
           const anchor = dontPegBottom ? backCeiling : frontFloor;
-          const bi = pushQuad(opaqueBuckets, sd1.bottomtexture, x2, y2, x1, y1, backFloor, frontFloor,
-            sd1.textureoffset / 65536, anchor, sd1.rowoffset / 65536, backLight);
+          const bi = pushQuad(opaqueBuckets, sd1.bottomtexture, x1, y1, x2, y2, backFloor, frontFloor,
+            sd1.textureoffset / 65536, anchor, sd1.rowoffset / 65536, backLight, false);
           if (bi >= 0) {
             const c = { bucket: opaqueBuckets.get(sd1.bottomtexture), baseIdx: bi, front, back,
               kind: 'lower-back', rowoffset: sd1.rowoffset/65536, texH,
@@ -283,10 +293,16 @@ export function R_BuildWalls(scene) {
       const map = R_GetWallTexture(texnum);
       // Masked midtextures use alphaTest so transparent post-gaps clip out.
       // depthWrite stays on (binary alpha) so we avoid back-to-front sorting.
+      // Opaque walls render single-sided. The triangle winding (front-vs-back
+      // facing in pushQuad) places the normal on the appropriate Doom side so
+      // FrontSide rendering culls the back face — viewers on the wrong side
+      // see through to the next sector instead of seeing the mirrored texture.
+      // Masked midtextures (grates / fences) stay DoubleSide since vanilla
+      // renders them visible from both sides.
       const mat = masked
         ? new THREE.MeshBasicMaterial({ map, vertexColors: true, side: THREE.DoubleSide,
             alphaTest: 0.5, transparent: false, depthWrite: true })
-        : new THREE.MeshBasicMaterial({ map, vertexColors: true, side: THREE.DoubleSide });
+        : new THREE.MeshBasicMaterial({ map, vertexColors: true, side: THREE.FrontSide });
       const mesh = new THREE.Mesh(g, mat);
       mesh.frustumCulled = false;
       b.mesh = mesh; // make findable from per-contrib pointer

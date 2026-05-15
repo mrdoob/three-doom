@@ -143,7 +143,11 @@ export function R_BuildPlanes(scene) {
       g.setIndex(b.indices);
       g.computeVertexNormals();
       const map = R_GetFlatTexture(flatnum);
-      const mat = new THREE.MeshBasicMaterial({ map, vertexColors: true, side: THREE.DoubleSide });
+      // Floors face up (CCW indices → +Y normal); ceilings face down (CW
+      // indices via the `reverse` flag → -Y normal). FrontSide culls the
+      // back, matching vanilla's "you only see floors from above, ceilings
+      // from below".
+      const mat = new THREE.MeshBasicMaterial({ map, vertexColors: true, side: THREE.FrontSide });
       const mesh = new THREE.Mesh(g, mat);
       mesh.frustumCulled = false;
       // Wire each bucket back to its mesh so updates can hit the right geometry.
