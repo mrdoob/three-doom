@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { sectors, numsectors } from './p_setup.js';
 import { R_GetFlatTexture, R_RegisterFlatMesh } from './r_data.js';
+import { R_MakeDoomMaterial } from './r_shader.js';
 import { skyflatnum } from './doomstat.js';
 import { earcut } from './earcut.js';
 
@@ -143,11 +144,7 @@ export function R_BuildPlanes(scene) {
       g.setIndex(b.indices);
       g.computeVertexNormals();
       const map = R_GetFlatTexture(flatnum);
-      // Floors face up (CCW indices → +Y normal); ceilings face down (CW
-      // indices via the `reverse` flag → -Y normal). FrontSide culls the
-      // back, matching vanilla's "you only see floors from above, ceilings
-      // from below".
-      const mat = new THREE.MeshBasicMaterial({ map, vertexColors: true, side: THREE.FrontSide });
+      const mat = R_MakeDoomMaterial(map, { side: THREE.FrontSide });
       const mesh = new THREE.Mesh(g, mat);
       mesh.frustumCulled = false;
       // Wire each bucket back to its mesh so updates can hit the right geometry.

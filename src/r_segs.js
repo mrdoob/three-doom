@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { lines, sides, numlines } from './p_setup.js';
 import { ML_TWOSIDED, ML_DONTPEGTOP, ML_DONTPEGBOTTOM } from './doomdata.js';
 import { R_GetWallTexture, textures, R_RegisterWallMesh } from './r_data.js';
+import { R_MakeDoomMaterial } from './r_shader.js';
 
 // Per-sector wall-quad contributions, so R_UpdateSectorWalls can re-write the
 // Y coordinates when a door/lift/floor moves. Each entry knows how to
@@ -291,18 +292,13 @@ export function R_BuildWalls(scene) {
       g.setIndex(b.indices);
       g.computeVertexNormals();
       const map = R_GetWallTexture(texnum);
-      // Masked midtextures use alphaTest so transparent post-gaps clip out.
-      // depthWrite stays on (binary alpha) so we avoid back-to-front sorting.
-      // Opaque walls render single-sided. The triangle winding (front-vs-back
-      // facing in pushQuad) places the normal on the appropriate Doom side so
-      // FrontSide rendering culls the back face — viewers on the wrong side
-      // see through to the next sector instead of seeing the mirrored texture.
-      // Masked midtextures (grates / fences) stay DoubleSide since vanilla
-      // renders them visible from both sides.
-      const mat = masked
-        ? new THREE.MeshBasicMaterial({ map, vertexColors: true, side: THREE.DoubleSide,
-            alphaTest: 0.5, transparent: false, depthWrite: true })
-        : new THREE.MeshBasicMaterial({ map, vertexColors: true, side: THREE.FrontSide });
+      // Custom Doom shader: paletted texture + COLORMAP remap + distance-
+      // fade lighting (r_shader.js). Masked midtextures (grates / fences)
+      // run the same shader with masked=true (discards alpha=0 pixels) and
+      // DoubleSide so vanilla's two-sided masked rendering matches.
+      const mat = R_MakeDoomMaterial(map, {
+        masked, side: masked ? THREE.DoubleSide : THREE.FrontSide,
+      });
       const mesh = new THREE.Mesh(g, mat);
       mesh.frustumCulled = false;
       b.mesh = mesh; // make findable from per-contrib pointer

@@ -8,6 +8,7 @@ import { W_CheckNumForName, W_GetNumForName, W_CacheLumpName, W_CacheLumpNum, W_
 import { I_Error } from './i_system.js';
 import { FRACBITS } from './m_fixed.js';
 import { patch_t } from './v_video.js';
+import { R_MakeIndexedTexture, R_ShaderInit } from './r_shader.js';
 
 // ---------- Lump ranges ----------
 export let firstflat = 0, lastflat = 0, numflats = 0;
@@ -178,6 +179,9 @@ export function R_InitData() {
   R_InitFlats();
   R_InitSpriteLumps();
   R_InitColormaps();
+  // Palette + COLORMAP textures are built once and shared by every wall /
+  // flat ShaderMaterial. Sprites still use pre-decoded RGBA via THREE.Sprite.
+  R_ShaderInit(playpal_rgba, colormaps);
 }
 
 // ---------- Composite texture builder (column posts -> RGBA) ----------
@@ -193,10 +197,15 @@ export function R_InitData() {
 // pixels at alpha=0. r_segs.js then routes midtextures on two-sided linedefs
 // into a separate bucket whose material uses alphaTest — the GL equivalent of
 // vanilla's masked column path.
-function buildTextureRGBA(texnum) {
+//
+// Buffers are emitted as (indices, alphas) — kept as palette indices so the
+// fragment shader can apply COLORMAP remap and palette lookup at sample time.
+// R_MakeIndexedTexture packs them into an RG8 texture.
+function buildTextureIndexed(texnum) {
   const t = textures[texnum];
   const w = t.width, h = t.height;
-  const rgba = new Uint8Array(w * h * 4); // zero-initialised: alpha=0 = transparent
+  const indices = new Uint8Array(w * h);
+  const alphas  = new Uint8Array(w * h); // zero-initialised: alpha=0 = transparent
   for (const pp of t.patches) {
     const bytes = W_CacheLumpNum(pp.patchLump, 0);
     const p = patch_t(bytes);
@@ -211,59 +220,39 @@ function buildTextureRGBA(texnum) {
         for (let i = 0; i < length; i++) {
           const ty = pp.originy + topdelta + i;
           if (ty < 0 || ty >= h) continue;
-          const c = bytes[srcStart + i] * 4;
-          const idx = (ty * w + tx) * 4;
-          rgba[idx + 0] = playpal_rgba[c + 0];
-          rgba[idx + 1] = playpal_rgba[c + 1];
-          rgba[idx + 2] = playpal_rgba[c + 2];
-          rgba[idx + 3] = 255;
+          const dst = ty * w + tx;
+          indices[dst] = bytes[srcStart + i];
+          alphas[dst]  = 255;
         }
         colptr += length + 4;
       }
     }
   }
-  return { rgba, w, h };
+  return { indices, alphas, w, h };
 }
 
-function buildFlatRGBA(flatnum) {
+function buildFlatIndexed(flatnum) {
   const lumpnum = firstflat + flattranslation[flatnum];
   const bytes = W_CacheLumpNum(lumpnum, 0);
-  // 64x64 paletted.
-  const rgba = new Uint8Array(64 * 64 * 4);
+  // 64x64 paletted, always opaque.
+  const indices = new Uint8Array(64 * 64);
+  const alphas  = new Uint8Array(64 * 64);
   for (let i = 0; i < 64 * 64; i++) {
-    const c = bytes[i] * 4;
-    rgba[i * 4 + 0] = playpal_rgba[c + 0];
-    rgba[i * 4 + 1] = playpal_rgba[c + 1];
-    rgba[i * 4 + 2] = playpal_rgba[c + 2];
-    rgba[i * 4 + 3] = 255;
+    indices[i] = bytes[i];
+    alphas[i]  = 255;
   }
-  return { rgba, w: 64, h: 64 };
+  return { indices, alphas, w: 64, h: 64 };
 }
 
-function makeDataTexture({ rgba, w, h }) {
-  const tex = new THREE.DataTexture(rgba, w, h, THREE.RGBAFormat);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  // Wall/flat UVs are written assuming flipY=false (image row 0 == V=0).
-  tex.flipY = false;
-  // Doom's PLAYPAL values are art-directed for direct CRT display, i.e. sRGB-
-  // encoded. Mark as sRGB so Three.js linearises the texture in the shader;
-  // per-vertex lightlevel multiplication then happens in linear space and the
-  // sRGB output conversion gamma-encodes the final result back for display.
-  // Gamma-correct.
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  return tex;
+function makeIndexedTexture({ indices, alphas, w, h }) {
+  return R_MakeIndexedTexture(indices, alphas, w, h);
 }
 
 export function R_GetFlatTexture(flatnum) {
   if (flatnum < 0 || flatnum >= numflats) return null;
   let tex = _flatTextureCache.get(flatnum);
   if (tex === undefined) {
-    tex = makeDataTexture(buildFlatRGBA(flatnum));
+    tex = makeIndexedTexture(buildFlatIndexed(flatnum));
     _flatTextureCache.set(flatnum, tex);
   }
   return tex;
@@ -276,7 +265,7 @@ export function R_GetWallTexture(texnum) {
   if (texnum < 0 || texnum >= numtextures) return null;
   let tex = _textureTextureCache.get(texnum);
   if (tex === undefined) {
-    tex = makeDataTexture(buildTextureRGBA(texnum));
+    tex = makeIndexedTexture(buildTextureIndexed(texnum));
     _textureTextureCache.set(texnum, tex);
   }
   return tex;
