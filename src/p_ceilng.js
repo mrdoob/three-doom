@@ -100,6 +100,12 @@ export function T_MoveCeiling(thinker) {
 // p_ceilng.c:148 — EV_DoCeiling.
 export function EV_DoCeiling(line, type) {
   let rtn = 0;
+  // p_ceilng.c:180 — for the crusher types, first try to reactivate any
+  // matching crusher already in stasis. SR Crush lines depend on this so a
+  // halted crusher can be re-triggered.
+  if (type === fastCrushAndRaise || type === silentCrushAndRaise || type === crushAndRaise) {
+    P_ActivateInStasisCeiling(line);
+  }
   for (let i = 0; i < numsectors; i++) {
     const sec = sectors[i];
     if (sec.tag !== line.tag) continue;
@@ -142,7 +148,40 @@ export function EV_DoCeiling(line, type) {
   return rtn;
 }
 
-export function P_AddActiveCeiling(_c) {}
-export function P_RemoveActiveCeiling(_c) {}
-export function EV_CeilingCrushStop(_line) { return 0; }
-export function P_ActivateInStasisCeiling(_line) {}
+// p_ceilng.c uses an explicit activeceilings[MAXCEILINGS] table. Our port
+// tracks live ceilings via the thinker list (the same convention p_plats
+// uses) by reading sector.specialdata, so the add/remove primitives are
+// just bookkeeping hooks — the array lookup becomes a sector walk.
+export function P_AddActiveCeiling(_c)    { /* tracked via thinker list */ }
+export function P_RemoveActiveCeiling(_c) { /* tracked via thinker list */ }
+
+// p_ceilng.c:314 — EV_CeilingCrushStop. Pauses every active crusher with
+// the matching line tag. T_MoveCeiling already early-returns on direction=0,
+// so we just stash olddirection and zero direction. EV_DoCeiling's stasis
+// detection later (via P_ActivateInStasisCeiling) reverses it.
+export function EV_CeilingCrushStop(line) {
+  let rtn = 0;
+  for (let i = 0; i < numsectors; i++) {
+    const sec = sectors[i];
+    const c = sec.specialdata;
+    if (c !== null && c.tag === line.tag && c.direction !== 0) {
+      c.olddirection = c.direction;
+      c.direction    = 0;
+      rtn = 1;
+    }
+  }
+  return rtn;
+}
+
+// p_ceilng.c:291 — P_ActivateInStasisCeiling. Resumes paused crushers whose
+// tag matches the (re-)pressed line. Called from EV_DoCeiling at the top of
+// the dispatch so an SR Crush line can flip a halted crusher back on.
+export function P_ActivateInStasisCeiling(line) {
+  for (let i = 0; i < numsectors; i++) {
+    const sec = sectors[i];
+    const c = sec.specialdata;
+    if (c !== null && c.tag === line.tag && c.direction === 0) {
+      c.direction = c.olddirection;
+    }
+  }
+}
