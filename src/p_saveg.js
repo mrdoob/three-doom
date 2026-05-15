@@ -191,11 +191,126 @@ export function P_UnArchiveThinkers(arr) {
   }
 }
 
-// Active specials (doors, lifts, etc.) re-derive themselves from the world
-// snapshot — no per-thinker serialization needed because sector heights /
-// states are captured in P_ArchiveWorld.
-export function P_ArchiveSpecials() { return []; }
-export function P_UnArchiveSpecials(_arr) { }
+// p_saveg.c:355 — P_ArchiveSpecials. Walk the thinker list and snapshot every
+// active special (door, lift, ceiling, floor, light flash, strobe, glow,
+// fire flicker) with enough state to resume mid-motion on load. The C source
+// stores a tag byte + struct dump per entry; we use tagged JSON objects with
+// sector index in place of the pointer "swizzle".
+//
+// Each special hangs off a thinker as one of: __door, __ceiling, __floor,
+// __plat, __flash, __strobe, __glow, __flick. We dispatch on whichever is
+// present.
+function _sectorIndex(sec) {
+  const ss = imp_sectors();
+  for (let i = 0; i < ss.length; i++) if (ss[i] === sec) return i;
+  return -1;
+}
+
+export function P_ArchiveSpecials() {
+  const out = [];
+  const cap = globalThis.__doom_thinkercap;
+  if (cap === undefined) return out;
+  let cur = cap.next;
+  while (cur !== cap) {
+    if (cur.__door !== undefined) {
+      const d = cur.__door;
+      out.push({ k: 'door', s: _sectorIndex(d.sector), type: d.type, topwait: d.topwait,
+        speed: d.speed, topheight: d.topheight, topcountdown: d.topcountdown, direction: d.direction });
+    } else if (cur.__ceiling !== undefined) {
+      const c = cur.__ceiling;
+      out.push({ k: 'ceil', s: _sectorIndex(c.sector), type: c.type, speed: c.speed,
+        crush: c.crush, topheight: c.topheight, bottomheight: c.bottomheight,
+        tag: c.tag, direction: c.direction, olddirection: c.olddirection });
+    } else if (cur.__floor !== undefined) {
+      const f = cur.__floor;
+      out.push({ k: 'floor', s: _sectorIndex(f.sector), type: f.type,
+        speed: f.speed, direction: f.direction, crush: f.crush,
+        floordestheight: f.floordestheight, newspecial: f.newspecial, texture: f.texture });
+    } else if (cur.__plat !== undefined) {
+      const p = cur.__plat;
+      out.push({ k: 'plat', s: _sectorIndex(p.sector), type: p.type,
+        speed: p.speed, low: p.low, high: p.high, wait: p.wait, count: p.count,
+        status: p.status, oldstatus: p.oldstatus, crush: p.crush, tag: p.tag });
+    } else if (cur.__flash !== undefined) {
+      const f = cur.__flash;
+      out.push({ k: 'flash', s: _sectorIndex(f.sector), count: f.count,
+        maxlight: f.maxlight, minlight: f.minlight, maxtime: f.maxtime, mintime: f.mintime });
+    } else if (cur.__strobe !== undefined) {
+      const s = cur.__strobe;
+      out.push({ k: 'strobe', s: _sectorIndex(s.sector), count: s.count,
+        minlight: s.minlight, maxlight: s.maxlight, darktime: s.darktime, brighttime: s.brighttime });
+    } else if (cur.__glow !== undefined) {
+      const g = cur.__glow;
+      out.push({ k: 'glow', s: _sectorIndex(g.sector), minlight: g.minlight,
+        maxlight: g.maxlight, direction: g.direction });
+    } else if (cur.__flick !== undefined) {
+      const f = cur.__flick;
+      out.push({ k: 'flick', s: _sectorIndex(f.sector), count: f.count,
+        maxlight: f.maxlight, minlight: f.minlight });
+    }
+    cur = cur.next;
+  }
+  return out;
+}
+
+// p_saveg.c:475 — P_UnArchiveSpecials. Re-spawn each archived thinker
+// against the freshly-loaded map, rebinding the sector pointer from index.
+// We dynamic-import the special modules to avoid a hard dependency cycle
+// with p_doors/p_floor/etc.
+export async function P_UnArchiveSpecials(arr) {
+  if (arr === undefined || arr === null || arr.length === 0) return;
+  const sectors = imp_sectors();
+  // Load the modules once.
+  const [pDoors, pCeil, pFloor, pPlats, pLights, pTick] = await Promise.all([
+    import('./p_doors.js'),  import('./p_ceilng.js'),
+    import('./p_floor.js'),  import('./p_plats.js'),
+    import('./p_lights.js'), import('./p_tick.js'),
+  ]);
+  for (const r of arr) {
+    if (r.s < 0 || r.s >= sectors.length) continue;
+    const sec = sectors[r.s];
+    let data, fn, key;
+    switch (r.k) {
+      case 'door':
+        data = { sector: sec, type: r.type, topwait: r.topwait, speed: r.speed,
+          topheight: r.topheight, topcountdown: r.topcountdown, direction: r.direction };
+        fn = pDoors.T_VerticalDoor; key = '__door'; break;
+      case 'ceil':
+        data = { sector: sec, type: r.type, speed: r.speed, crush: r.crush,
+          topheight: r.topheight, bottomheight: r.bottomheight,
+          tag: r.tag, direction: r.direction, olddirection: r.olddirection };
+        fn = pCeil.T_MoveCeiling; key = '__ceiling'; break;
+      case 'floor':
+        data = { sector: sec, type: r.type, speed: r.speed, direction: r.direction,
+          crush: r.crush, floordestheight: r.floordestheight,
+          newspecial: r.newspecial, texture: r.texture };
+        fn = pFloor.T_MoveFloor; key = '__floor'; break;
+      case 'plat':
+        data = { sector: sec, type: r.type, speed: r.speed, low: r.low, high: r.high,
+          wait: r.wait, count: r.count, status: r.status, oldstatus: r.oldstatus,
+          crush: r.crush, tag: r.tag };
+        fn = pPlats.T_PlatRaise; key = '__plat'; break;
+      case 'flash':
+        data = { sector: sec, count: r.count, maxlight: r.maxlight, minlight: r.minlight,
+          maxtime: r.maxtime, mintime: r.mintime };
+        fn = pLights.T_LightFlash; key = '__flash'; break;
+      case 'strobe':
+        data = { sector: sec, count: r.count, minlight: r.minlight, maxlight: r.maxlight,
+          darktime: r.darktime, brighttime: r.brighttime };
+        fn = pLights.T_StrobeFlash; key = '__strobe'; break;
+      case 'glow':
+        data = { sector: sec, minlight: r.minlight, maxlight: r.maxlight, direction: r.direction };
+        fn = pLights.T_Glow; key = '__glow'; break;
+      case 'flick':
+        data = { sector: sec, count: r.count, maxlight: r.maxlight, minlight: r.minlight };
+        fn = pLights.T_FireFlicker; key = '__flick'; break;
+      default: continue;
+    }
+    sec.specialdata = data;
+    const thinker = { prev: null, next: null, function: fn, [key]: data };
+    pTick.P_AddThinker(thinker);
+  }
+}
 
 // ---------- localStorage save slots ----------
 
