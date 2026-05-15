@@ -189,7 +189,9 @@ function D_Display() {
       // 320x200 viewport). ST_Drawer expects a 320x200-relative box and draws
       // the bar at y=168..200 inside it; we pick a virtual box such that the
       // bar lands flush at the bottom of the actual canvas.
-      if (_stDrawer !== null) {
+      // Status bar — hidden when screen-size slider is at max (screenblocks
+      // === 11), matching vanilla. Other sizes always show the bar.
+      if (_stDrawer !== null && (_isStatusBarVisible === null || _isStatusBarVisible() === true)) {
         const cw = overlay.width;
         const barScale = cw / 320;
         const virtH = 200 * barScale;
@@ -246,6 +248,7 @@ let _gReadDemoCmd = null;
 let _wiDrawer  = null;
 let _wiTicker  = null;
 let _wiResponder = null;
+let _isStatusBarVisible = null;
 async function D_DoomLoop() {
   _pTicker = (await import('./p_tick.js')).P_Ticker;
   _updateSprites = (await import('./r_things.js')).R_UpdateSprites;
@@ -261,6 +264,7 @@ async function D_DoomLoop() {
   const mMenu = await import('./m_menu.js');
   _menuDrawer = mMenu.M_Drawer;
   _menuTicker = mMenu.M_Ticker;
+  _isStatusBarVisible = mMenu.isStatusBarVisible;
   _animTextures = (await import('./r_data.js')).R_AnimateTextures;
   const fw = await import('./f_wipe.js');
   _fwipeDraw   = fw.wipe_Draw;

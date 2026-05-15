@@ -32,9 +32,18 @@ let _skullTicker  = 0;
 export let sfxVolume = 8;
 export let musicVolume = 8;
 let _detailLevel  = 0;  // 0=high, 1=low
-let _screenSize   = 9;  // 3..11
+// _screenSize is the menu's view-size index (0..8 — slider position).
+// _screenblocks is the corresponding renderer "screen blocks" value (3..11)
+// the C code passes to R_SetViewSize. They move together: m_menu.c:1152 has
+// `screenblocks-- ; screenSize--` and the inverse for grow.
+let _screenSize   = 8;   // 0..8 (full-status-bar = 8 default at boot)
+let _screenblocks = 11;  // 3..11 — exported so the HUD/status-bar layer can
+                         //          decide whether to draw the status bar.
 let _messages     = 1;
 let _mouseSens    = 5;
+
+export function getScreenblocks() { return _screenblocks; }
+export function isStatusBarVisible() { return _screenblocks < 11; }
 
 // Save-slot names.
 const SAVE_SLOTS = 6;
@@ -69,7 +78,7 @@ const OPTIONS_MENU = { name: 'Options', x: 60, y: 37, items: [
   { patch: 'M_ENDGAM', label: 'End Game',          action: () => M_EndGame() },
   { patch: 'M_MESSG',  label: 'Messages',          action: () => { _messages ^= 1; } },
   { patch: 'M_DETAIL', label: 'Graphic Detail',    action: () => { _detailLevel ^= 1; } },
-  { patch: 'M_SCRNSZ', label: 'Screen Size',       slider: true, get: () => _screenSize, set: (v) => { _screenSize = Math.max(3, Math.min(11, v)); } },
+  { patch: 'M_SCRNSZ', label: 'Screen Size',       slider: true, get: () => _screenSize, set: (v) => M_SizeDisplay(v > _screenSize ? 1 : 0) },
   { patch: 'M_MSENS',  label: 'Mouse Sensitivity', slider: true, get: () => _mouseSens,  set: (v) => { _mouseSens  = Math.max(0, Math.min(9, v)); } },
   { patch: 'M_SVOL',   label: 'Sound Volume',      action: () => pushMenu(SOUND_MENU) },
 ]};
@@ -332,4 +341,23 @@ function drawMessage(ctx, dstX, dstY, dstW, dstH) {
 }
 
 // ---------- API expected by g_game.js ----------
-export function M_SizeDisplay(_v) {}
+// m_menu.c:1152 — M_SizeDisplay. Slider LEFT (choice=0) shrinks the view
+// (decrement screenSize/screenblocks); RIGHT (choice=1) grows it. The
+// vanilla bounds are screenSize in [0,8] mapping to screenblocks in [3,11].
+// Once we reach the top, screenblocks=11 hides the status bar.
+export function M_SizeDisplay(choice) {
+  if (choice === 0) {
+    if (_screenSize > 0) {
+      _screenSize--;
+      _screenblocks--;
+    }
+  } else if (choice === 1) {
+    if (_screenSize < 8) {
+      _screenSize++;
+      _screenblocks++;
+    }
+  }
+  // 3D port doesn't have R_SetViewSize — instead the renderer just stays
+  // full-window. The only observable effect is hiding/showing the status bar
+  // (handled by d_main checking isStatusBarVisible() before calling ST_Drawer).
+}
