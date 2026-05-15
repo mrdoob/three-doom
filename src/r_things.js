@@ -15,6 +15,7 @@ import { lumpinfo } from './w_wad.js';
 import { I_Error } from './i_system.js';
 import { FRACBITS } from './m_fixed.js';
 import { patch_t } from './v_video.js';
+import { R_PointToAngle2 } from './r_bsp.js';
 
 // ---------- Sprite definition tables ----------
 export let numsprites = 0;
@@ -215,21 +216,19 @@ export function R_UpdateSprites() {
       lumpIdx = sf.lump[0];
       flipped = sf.flip[0];
     } else {
-      // Vanilla r_things.c: rot = (ang - thing->angle + 9*ANG45/2) >> 29
-      // where ang = R_PointToAngle2(viewer, thing) — viewer-to-thing.
-      // The sign was flipped in the original port so we saw the back when an
-      // enemy faced us. Fixed: use (angleToThing - thingAngle) as in vanilla.
-      const dx = mo.x - viewx;
-      const dy = mo.y - viewy;
-      const angleToThing = Math.atan2(dy, dx); // -π..π
-      const thingAngleRad = (mo.angle >>> 0) / 0x100000000 * Math.PI * 2;
-      // 9 * ANG45 / 2 in radians = 9π/8.
-      let r = angleToThing - thingAngleRad + (9 * Math.PI / 8);
-      while (r < 0) r += Math.PI * 2;
-      while (r >= Math.PI * 2) r -= Math.PI * 2;
-      const idx = (r / (Math.PI / 4)) | 0; // 0..7
-      lumpIdx = sf.lump[idx & 7];
-      flipped = sf.flip[idx & 7];
+      // r_things.c:R_ProjectSprite:
+      //   ang = R_PointToAngle(thing->x, thing->y);
+      //   rot = (ang - thing->angle + (unsigned)(ANG45/2)*9) >> 29;
+      // Match vanilla bit-for-bit using R_PointToAngle2 (which uses the
+      // tantoangle LUT, not Math.atan2). The unsigned arithmetic wraps
+      // around 2^32 implicitly via >>> 0.
+      const ang   = R_PointToAngle2(viewx, viewy, mo.x, mo.y) >>> 0;
+      const ta    = mo.angle >>> 0;
+      const off   = 0x90000000;            // 9 * ANG45 / 2 = 9 * 0x10000000.
+      const rot32 = ((ang - ta + off) | 0) >>> 0; // wrap to uint32.
+      const idx   = (rot32 >>> 29) & 7;
+      lumpIdx = sf.lump[idx];
+      flipped = sf.flip[idx];
     }
     if (lumpIdx < 0) continue;
     const t = buildSpriteTexture(lumpIdx);
