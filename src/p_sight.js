@@ -45,12 +45,16 @@ function P_InterceptVector2(v2, v1) {
   return FixedDiv(num, den);
 }
 
-// p_sight.c:135 — P_CrossSubsector.
+// p_sight.c:135 — P_CrossSubsector. Hoisted scratch divline (P_CrossSubsector
+// is called once per visited subsector inside a recursive BSP descent driven
+// by P_CheckSight, which itself runs per-mobj per-tic for AI). Allocating
+// inside generated noticeable GC pressure on monster-heavy maps.
+const _csDivl = { x: 0, y: 0, dx: 0, dy: 0 };
 function P_CrossSubsector(num) {
   const sub = subsectors[num];
   let segIdx = sub.firstline;
   let count  = sub.numlines;
-  const divl = { x: 0, y: 0, dx: 0, dy: 0 };
+  const divl = _csDivl;
   while (count-- > 0) {
     const seg = segs[segIdx++];
     const line = seg.linedef;

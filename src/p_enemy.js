@@ -184,14 +184,19 @@ const opposite = [DI_WEST, DI_SOUTHWEST, DI_SOUTH, DI_SOUTHEAST,
                   DI_EAST, DI_NORTHEAST, DI_NORTH, DI_NORTHWEST, DI_NODIR];
 const diags = [DI_NORTHWEST, DI_NORTHEAST, DI_SOUTHWEST, DI_SOUTHEAST];
 
-// p_enemy.c:362 — P_NewChaseDir.
+// p_enemy.c:362 — P_NewChaseDir. Called from A_Chase for every monster
+// every other tic; the scratch `d` array is hoisted to module scope so the
+// hot path doesn't allocate. (Reading [0] / [1] / [2] only — no concurrent
+// invocation issue under the 35Hz tic loop.)
+const _ncdScratch = [8 /*DI_NODIR*/, 8 /*DI_NODIR*/, 8 /*DI_NODIR*/];
 function P_NewChaseDir(actor) {
   if (actor.target === null) return;
   const olddir = actor.movedir;
   const turnaround = opposite[olddir];
   const deltax = actor.target.x - actor.x;
   const deltay = actor.target.y - actor.y;
-  const d = [DI_NODIR, DI_NODIR, DI_NODIR];
+  const d = _ncdScratch;
+  d[0] = DI_NODIR; d[1] = DI_NODIR; d[2] = DI_NODIR;
   if      (deltax >  10 * 65536) d[1] = DI_EAST;
   else if (deltax < -10 * 65536) d[1] = DI_WEST;
   if      (deltay < -10 * 65536) d[2] = DI_SOUTH;
