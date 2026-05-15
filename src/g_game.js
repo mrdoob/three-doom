@@ -11,6 +11,7 @@ import { gamestate, set_gamestate, gameaction, set_gameaction, gameepisode, game
          set_gameepisode, set_gamemap, set_gameskill, set_levelstarttic, set_leveltime,
          set_totalkills, set_totalitems, set_totalsecret,
          totalkills, totalitems, totalsecret, leveltime,
+         secretexit, set_secretexit,
          players, playeringame, consoleplayer, gamemode, gametic } from './doomstat.js';
 import { WI_Start } from './wi_stuff.js';
 import { M_ScreenShot } from './m_misc.js';
@@ -414,9 +415,68 @@ export function G_DoLoadGame() {
 // g_game.c:G_DoCompleted — build wbstartstruct from the level's tallies,
 // transition to GS_INTERMISSION, and start WI_*. The intermission screen
 // presses-any-key callback fires ga_worlddone, which G_DoWorldDone advances
-// to the next map.
+// to the next map. Handles secret-exit routing (E_M9 ↔ E_M4, MAP15 ↔ MAP31,
+// MAP31 ↔ MAP32, MAP32 → MAP16) and ExM8 → ga_victory for Doom 1.
 export function G_DoCompleted() {
-  // For each playing player, snapshot their kills/items/secrets/time.
+  // p_user: take away cards/powers from each player.
+  for (let i = 0; i < players.length; i++) {
+    if (playeringame[i] === true && players[i] !== null && players[i] !== undefined) {
+      G_PlayerFinishLevel(players[i]);
+    }
+  }
+
+  // ExM8 (Doom 1 episode boss) → finale instead of intermission.
+  if (gamemode !== GameMode_t.commercial && gamemap === 8) {
+    set_gameaction(gameaction_t.ga_victory);
+    return;
+  }
+  // ExM9 (Doom 1 secret level): mark didsecret on every player so future
+  // secret-exit attempts know we've been here. (Vanilla also breaks here
+  // and falls through, so we keep iterating.)
+  if (gamemode !== GameMode_t.commercial && gamemap === 9) {
+    for (let i = 0; i < players.length; i++) {
+      if (players[i] !== null && players[i] !== undefined) players[i].didsecret = true;
+    }
+  }
+
+  // wminfo.next is 0-biased (vanilla: next+1 = real map). Translate.
+  let nextMap;
+  if (gamemode === GameMode_t.commercial) {
+    if (secretexit === true) {
+      // MAP15 → MAP31 (Wolfenstein); MAP31 → MAP32 (Grosse).
+      switch (gamemap) {
+        case 15: nextMap = 30; break;
+        case 31: nextMap = 31; break;
+        default: nextMap = gamemap; break;
+      }
+    } else {
+      // MAP31 / MAP32 normal exit returns to MAP16.
+      switch (gamemap) {
+        case 31: case 32: nextMap = 15; break;
+        default:           nextMap = gamemap; break;
+      }
+    }
+  } else {
+    if (secretexit === true) {
+      // Doom 1 secret-exit → ExM9.
+      nextMap = 8;
+    } else if (gamemap === 9) {
+      // Returning from secret level — episode-specific re-entry point.
+      switch (gameepisode) {
+        case 1: nextMap = 3; break;
+        case 2: nextMap = 5; break;
+        case 3: nextMap = 6; break;
+        case 4: nextMap = 2; break;
+        default: nextMap = 0; break;
+      }
+    } else {
+      nextMap = gamemap;
+    }
+  }
+
+  const pCon = players[consoleplayer];
+  const didsecret = (pCon !== null && pCon !== undefined && pCon.didsecret === true);
+
   const plyrSnap = [];
   for (let i = 0; i < players.length; i++) {
     const p = players[i];
@@ -430,9 +490,11 @@ export function G_DoCompleted() {
     });
   }
   const wbs = {
-    epsd:      gameepisode,
-    last:      gamemap,
-    next:      gamemap + 1,
+    didsecret,
+    // epsd and last are 0-biased to match wminfo conventions.
+    epsd:      gameepisode - 1,
+    last:      gamemap - 1,
+    next:      nextMap,
     maxkills:  totalkills,
     maxitems:  totalitems,
     maxsecret: totalsecret,
@@ -440,8 +502,12 @@ export function G_DoCompleted() {
     pnum:      consoleplayer,
   };
   set_gamestate(gamestate_t.GS_INTERMISSION);
+  // Reset secretexit now that we've consumed it.
+  set_secretexit(false);
+  // Tell G_DoWorldDone where to go on press-key.
+  set_wmNext(nextMap);
   WI_Start(wbs, () => {
-    // Player pressed past the intermission — advance to the next map.
+    // Player pressed past the intermission — advance to the queued map.
     set_gameaction(gameaction_t.ga_worlddone);
   });
 }
@@ -450,10 +516,21 @@ export function G_DoVictory() {
 }
 export function G_WorldDone() {
   set_gameaction(gameaction_t.ga_worlddone);
+  // Vanilla also flips into the finale via wminfo.next after MAP06/11/20/30
+  // commercial breakpoints; not ported yet but the hook lives here.
 }
+// G_DoCompleted stashes `wmNext` (0-biased) so G_DoWorldDone knows where to
+// jump. Falls back to gamemap+1 if nothing is queued (legacy callers).
+let _wmNext = -1;
+export function set_wmNext(n) { _wmNext = n; }
 export function G_DoWorldDone() {
   set_gamestate(gamestate_t.GS_LEVEL);
-  set_gamemap(gamemap + 1);
+  if (_wmNext >= 0) {
+    set_gamemap(_wmNext + 1);
+    _wmNext = -1;
+  } else {
+    set_gamemap(gamemap + 1);
+  }
   set_gameaction(gameaction_t.ga_loadlevel);
 }
 // g_game.c:897 — random DM spawn (vanilla uses P_Random).
@@ -467,8 +544,19 @@ export function G_DeathMatchSpawnPlayer(playernum) {
   globalThis.__P_SpawnPlayer(choice);
 }
 
-export function G_ExitLevel()       { set_gameaction(gameaction_t.ga_completed); }
-export function G_SecretExitLevel() { set_gameaction(gameaction_t.ga_completed); }
+export function G_ExitLevel() {
+  set_secretexit(false);
+  set_gameaction(gameaction_t.ga_completed);
+}
+// g_game.c:G_SecretExitLevel — vanilla uses a sneaky shareware-doom check
+// that pretends the secret exit is broken in v1.0; we just set the flag.
+export function G_SecretExitLevel() {
+  // Shareware doom v1.0 didn't have a working secret exit on E1M3 — the
+  // C source emulates that bug by remapping the secret-exit type to a
+  // normal exit on shareware. We don't ship that bug; secret exits work.
+  set_secretexit(true);
+  set_gameaction(gameaction_t.ga_completed);
+}
 // Expose to non-importing call sites (p_spec.js, p_enemy.js) to avoid cycles.
 if (typeof globalThis !== 'undefined') {
   globalThis.__G_ExitLevel       = G_ExitLevel;

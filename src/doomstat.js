@@ -103,10 +103,14 @@ export let totalitems   = 0;
 export let totalsecret  = 0;
 export let levelstarttic = 0;
 export let leveltime    = 0;
+// g_game.c:90 — set true by G_SecretExitLevel, consumed by G_DoCompleted to
+// route the next-map computation through the secret-level paths.
+export let secretexit   = false;
 export function set_totalkills(v)   { totalkills = v; }
 export function set_totalitems(v)   { totalitems = v; }
 export function set_totalsecret(v)  { totalsecret = v; }
 export function set_levelstarttic(v){ levelstarttic = v; }
+export function set_secretexit(v)   { secretexit = v; }
 export { gameaction, set_gameaction } from './d_event.js';
 export function set_leveltime(v)    { leveltime = v; if (typeof globalThis !== 'undefined') globalThis.__doom_leveltime = v; }
 
