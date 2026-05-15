@@ -13,6 +13,7 @@ import { gamestate, set_gamestate, gameaction, set_gameaction, gameepisode, game
          totalkills, totalitems, totalsecret, leveltime,
          players, playeringame, consoleplayer, gamemode, gametic } from './doomstat.js';
 import { WI_Start } from './wi_stuff.js';
+import { M_ScreenShot } from './m_misc.js';
 import { gameaction_t } from './d_event.js';
 import { GameMode_t, gamestate_t, skill_t } from './doomdef.js';
 import { P_Random, M_ClearRandom } from './m_random.js';
@@ -55,7 +56,7 @@ export function G_Ticker() {
       case gameaction_t.ga_completed:  G_DoCompleted();   set_gameaction(gameaction_t.ga_nothing); break;
       case gameaction_t.ga_victory:    G_DoVictory();     set_gameaction(gameaction_t.ga_nothing); break;
       case gameaction_t.ga_worlddone:  G_DoWorldDone();   set_gameaction(gameaction_t.ga_nothing); break;
-      case gameaction_t.ga_screenshot: G_ScreenShot();    set_gameaction(gameaction_t.ga_nothing); break;
+      case gameaction_t.ga_screenshot: M_ScreenShot();    set_gameaction(gameaction_t.ga_nothing); break;
       default: set_gameaction(gameaction_t.ga_nothing); break;
     }
     // If the handler didn't advance gameaction we'd loop forever; break out.
@@ -427,4 +428,6 @@ if (typeof globalThis !== 'undefined') {
   globalThis.__G_ExitLevel       = G_ExitLevel;
   globalThis.__G_SecretExitLevel = G_SecretExitLevel;
 }
-export function G_ScreenShot()     { /* hooked elsewhere */ }
+// g_game.c:970 — G_ScreenShot just queues the action; G_Ticker dispatches
+// it to M_ScreenShot which actually writes the image.
+export function G_ScreenShot() { set_gameaction(gameaction_t.ga_screenshot); }

@@ -86,6 +86,33 @@ export function I_InitGraphics() {
     window.scene    = scene;
     window.camera   = camera;
   }
+  // Wire G_ScreenShot — m_misc.M_ScreenShot dispatches 'doom:screenshot' on
+  // window after G_Ticker dispatches ga_screenshot. We grab the WebGL canvas,
+  // composite the 2D overlay on top, and trigger a download.
+  window.addEventListener('doom:screenshot', captureScreenshot);
+}
+
+function captureScreenshot() {
+  if (renderer === null || overlayCanvas === null) return;
+  // Re-render so preserveDrawingBuffer isn't required.
+  renderer.render(scene, camera);
+  const w = renderer.domElement.width;
+  const h = renderer.domElement.height;
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(renderer.domElement, 0, 0);
+  ctx.drawImage(overlayCanvas, 0, 0, w, h);
+  out.toBlob((blob) => {
+    if (blob === null) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const t = new Date().toISOString().replace(/[:.]/g, '-');
+    a.download = `doom-${t}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
 }
 
 export function I_ShutdownGraphics() {
@@ -96,6 +123,7 @@ export function I_ShutdownGraphics() {
   window.removeEventListener('mousemove', onMouseMove);
   window.removeEventListener('mousedown', onMouseDown);
   window.removeEventListener('mouseup',   onMouseUp);
+  window.removeEventListener('doom:screenshot', captureScreenshot);
 }
 
 function resize() {
