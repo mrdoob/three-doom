@@ -34,7 +34,7 @@ function distApprox(dx, dy) {
 function findClosestPlayer(actor) {
   let best = null, bestDist = Infinity;
   for (let i = 0; i < players.length; i++) {
-    if (!playeringame[i]) continue;
+    if (playeringame[i] !== true) continue;
     const p = players[i];
     if (p === null || p === undefined || p.mo === null || p.health <= 0) continue;
     const d = distApprox(p.mo.x - actor.x, p.mo.y - actor.y) / 65536;
@@ -54,13 +54,13 @@ function P_LookForPlayers(actor, allaround) {
   // would spin forever. Bail out explicitly.
   let _any = false;
   for (let _i = 0; _i < playeringame.length; _i++) {
-    if (playeringame[_i]) { _any = true; break; }
+    if (playeringame[_i] === true) { _any = true; break; }
   }
-  if (!_any) return false;
+  if (_any === false) return false;
   let c = 0;
   const stop = (actor.lastlook - 1) & 3;
   for (;; actor.lastlook = (actor.lastlook + 1) & 3) {
-    if (!playeringame[actor.lastlook]) continue;
+    if (playeringame[actor.lastlook] !== true) continue;
     if (c++ === 2 || actor.lastlook === stop) return false;
     const player = players[actor.lastlook];
     if (player === null || player === undefined) continue;
@@ -405,7 +405,7 @@ function P_RecursiveSound(sec, soundblocks) {
     if (Math.min(front.ceilingheight, back.ceilingheight) <=
         Math.max(front.floorheight,   back.floorheight)) continue;
     const other = (front === sec) ? back : front;
-    if (ld.flags & 64 /*ML_SOUNDBLOCK*/) {
+    if ((ld.flags & 64 /*ML_SOUNDBLOCK*/) !== 0) {
       if (soundblocks === 0) P_RecursiveSound(other, 1);
     } else {
       P_RecursiveSound(other, soundblocks);
