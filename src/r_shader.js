@@ -153,7 +153,9 @@ void main() {
 
 // Material factory. `map` is the RG8 indexed texture from R_MakeIndexedTexture.
 // `masked=true` enables alphaTest discard for grates/fences.
-export function R_MakeDoomMaterial(map, { masked = false, side = THREE.FrontSide } = {}) {
+// `fixedColormap=0` forces the fullbright row (sky path: r_plane.c:396-405
+// "Sky is allways drawn full bright, no colormaps needed").
+export function R_MakeDoomMaterial(map, { masked = false, side = THREE.FrontSide, fixedColormap = -1, depthWrite = true } = {}) {
   if (_paletteTex === null || _colormapTex === null) {
     throw new Error('R_MakeDoomMaterial called before R_ShaderInit');
   }
@@ -163,7 +165,7 @@ export function R_MakeDoomMaterial(map, { masked = false, side = THREE.FrontSide
       palette:       { value: _paletteTex },
       colormap:      { value: _colormapTex },
       extralight:    extralightUniform,
-      fixedColormap: { value: -1.0 },
+      fixedColormap: { value: fixedColormap },
       masked:        { value: masked },
     },
     vertexShader:   VERT_SHADER,
@@ -171,6 +173,6 @@ export function R_MakeDoomMaterial(map, { masked = false, side = THREE.FrontSide
     vertexColors:   true,
     side,
     transparent:    false,
-    depthWrite:     true,
+    depthWrite,
   });
 }

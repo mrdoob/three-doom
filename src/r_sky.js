@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { gamemode, gameepisode, gamemap } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
 import { R_CheckTextureNumForName, R_GetWallTexture } from './r_data.js';
+import { R_MakeDoomMaterial } from './r_shader.js';
 import { camera } from './i_video.js';
 
 export let skytexture = -1;
@@ -36,25 +37,41 @@ export function R_BuildSky(scene) {
   if (skytexture < 0) return null;
   const baseMap = R_GetWallTexture(skytexture);
   if (baseMap === null) return null;
-  // Clone so the sky-specific UV transform doesn't bleed into walls that
-  // share the SKY1 lump.
+  // Clone so the sky's wrapT override doesn't bleed into walls that share
+  // the SKY1 lump (our wall path uses wrapT=RepeatWrapping). The clone is a
+  // separate Texture instance with its own GPU upload; the indexed RG8
+  // image data is shared by reference.
   const map = baseMap.clone();
   map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.ClampToEdgeWrapping;
-  // The Doom sky lump represents a band around the horizon — row 0 is the
-  // top edge of "sky" (above horizon), row 127 is the horizon line itself.
-  // SphereGeometry UV: V=1 at the top pole (+Y), V=0 at the bottom (-Y).
-  // We want: V=1 → image row 0 (light sky), V=0.5 → image row 127 (horizon).
-  // image_v = 2*(1 - V) = 2 - 2*V.  In texture matrix form: repeat=(1,-2),
-  // offset=(0,2). wrapT=ClampToEdge holds row 127 across the lower half.
-  map.repeat.set(1, -2);
-  map.offset.set(0, 2);
   map.needsUpdate = true;
   // Inside-out sphere. Large enough to enclose any reasonable map; pinned to
   // the camera so it's effectively infinite-distance.
   const radius = 4000;
   const geom = new THREE.SphereGeometry(radius, 32, 16);
-  const mat = new THREE.MeshBasicMaterial({ map, side: THREE.BackSide, depthWrite: false, fog: false });
+  // Bake the sky UV transform into the geometry — our shader does not honour
+  // texture.repeat/offset (those only apply to materials that read
+  // texture.matrix). Doom sky lump: row 0 = zenith, row 127 = horizon.
+  // SphereGeometry UV: V=1 at +Y (top), V=0.5 at equator, V=0 at -Y (bottom).
+  // Mapping: image_v = 2*(1 - V). With wrapT=ClampToEdge, image_v > 1 is
+  // pinned to the horizon row — so the lower half of the sphere shows the
+  // horizon line repeated (matches vanilla, which never lets you see "under"
+  // the sky band).
+  const uvAttr = geom.getAttribute('uv');
+  const uvArr = uvAttr.array;
+  for (let i = 0; i < uvArr.length; i += 2) {
+    uvArr[i + 1] = 2 - 2 * uvArr[i + 1];
+  }
+  uvAttr.needsUpdate = true;
+  // r_plane.c:396-405 — sky is drawn full bright, no colormap shading.
+  // Route through the Doom palette shader with fixedColormap=0 so palette
+  // indices resolve correctly (the indexed RG8 texture is meaningless when
+  // sampled as raw colour by MeshBasicMaterial).
+  const mat = R_MakeDoomMaterial(map, {
+    side: THREE.BackSide,
+    fixedColormap: 0,
+    depthWrite: false,
+  });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.frustumCulled = false;
   mesh.renderOrder = -1;
