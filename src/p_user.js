@@ -259,25 +259,11 @@ export function P_PlayerThink(player) {
   } else {
     player.fixedcolormap = 0;
   }
-  // Pickup overlap fallback. P_TryMove → PIT_CheckThing handles pickups on move
-  // but if the player stands still on top of an item the fallback ensures it
-  // still gets picked up next tic.
-  if (player.mo.subsector !== null && player.mo.subsector.sector !== null && _pInter !== null) {
-    const sec = player.mo.subsector.sector;
-    let mo = sec.thinglist;
-    while (mo !== null) {
-      const next = mo.snext;
-      if (mo !== player.mo && (mo.flags & 1 /*MF_SPECIAL*/) !== 0) {
-        const dx = mo.x - player.mo.x;
-        const dy = mo.y - player.mo.y;
-        const r = mo.radius + player.mo.radius;
-        if (Math.abs(dx) < r && Math.abs(dy) < r) {
-          _pInter.P_TouchSpecialThing(mo, player.mo);
-        }
-      }
-      mo = next;
-    }
-  }
+  // (Vanilla does NOT auto-pickup items the player is stationary on top of —
+  // pickups only happen through PIT_CheckThing inside P_TryMove, which runs
+  // only when momx/momy is nonzero. A previous port had a fallback loop here
+  // that auto-picked up overlapping items; it was removed for demo parity
+  // with vanilla.)
 }
 
 // Externals for sector specials.

@@ -111,16 +111,25 @@ function S_AdjustSoundParams(listener, source) {
   } else {
     vol = ((snd_SfxVolume * 8) * (S_CLIPPING_DIST - adist) / (S_CLIPPING_DIST - S_CLOSE_DIST)) | 0;
   }
-  // BAM separation: angle from listener to source minus listener angle.
-  // angle > ANG180 means the source is to the LEFT; vanilla subtracts so
-  // we end up sweeping sep across [NORM_SEP - SWING, NORM_SEP + SWING].
-  let angle = R_PointToAngle2(lmo.x, lmo.y, source.x, source.y) >>> 0;
-  if (angle > lmo.angle >>> 0) angle = (angle - lmo.angle) >>> 0;
-  else                         angle = (angle + (0xffffffff - lmo.angle) + 1) >>> 0;
-  const fa = (angle >>> ANGLETOFINESHIFT) & FINEMASK;
-  let sep = NORM_SEP - (((finesine[fa] * S_STEREO_SWING) >> 24) | 0);
-  if (sep < 0)   sep = 0;
-  if (sep > 255) sep = 255;
+  // s_sound.c:600 — if source and listener share the same XY, pin sep to
+  // NORM_SEP so the centre-pan stays stable. Otherwise R_PointToAngle2 of
+  // a zero vector returns 0 and the angle-relative sin landed on whatever
+  // -listener_angle happened to be, producing a non-centre pan.
+  let sep;
+  if (source.x === lmo.x && source.y === lmo.y) {
+    sep = NORM_SEP;
+  } else {
+    // BAM separation: angle from listener to source minus listener angle.
+    // angle > ANG180 means the source is to the LEFT; vanilla subtracts so
+    // we end up sweeping sep across [NORM_SEP - SWING, NORM_SEP + SWING].
+    let angle = R_PointToAngle2(lmo.x, lmo.y, source.x, source.y) >>> 0;
+    if (angle > lmo.angle >>> 0) angle = (angle - lmo.angle) >>> 0;
+    else                         angle = (angle + (0xffffffff - lmo.angle) + 1) >>> 0;
+    const fa = (angle >>> ANGLETOFINESHIFT) & FINEMASK;
+    sep = NORM_SEP - (((finesine[fa] * S_STEREO_SWING) >> 24) | 0);
+    if (sep < 0)   sep = 0;
+    if (sep > 255) sep = 255;
+  }
   return { vol, sep, pitch: NORM_PITCH };
 }
 
