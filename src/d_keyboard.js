@@ -9,6 +9,16 @@ import { renderer } from './i_video.js';
 const keys = new Set();
 let mouseDX = 0;
 let mouseButtons = 0;
+// g_game.c:262 — two-stage accelerative turning. `turnheld` accumulates the
+// number of tics the user has held a turn key; while it's below SLOWTURNTICS
+// we use the slow-turn rate, after which we fall through to the normal/fast
+// rate. Replaces the previous turnHeld-when-not-moving heuristic.
+const SLOWTURNTICS = 6;
+let turnheld = 0;
+// g_game.c:355 — forward double-click → BT_USE shortcut.
+let dclicks = 0;
+let dclickstate = 0;
+let dclicktime = 0;
 
 let _listenersInstalled = false;
 function installListeners() {
@@ -116,22 +126,28 @@ export const D_KeyboardInput = {
     cmd.sidemove    = 0;
     cmd.angleturn   = 0;
     cmd.buttons     = 0;
+    // g_game.c:175 — vanilla movement tables.
+    //   forwardmove[2] = { 25, 50 }
+    //   sidemove[2]    = { 24, 40 }
+    //   angleturn[3]   = { 640, 1280, 320 }  // [normal, fast, slow]
     const fast = keys.has('ShiftLeft') || keys.has('ShiftRight');
-    const fwd = fast ? 50 : 25;
+    const fwd  = fast ? 50 : 25;
     const side = fast ? 40 : 24;
-    // Slow turn when only turning (no movement) — matches vanilla's
-    // `turnheld < SLOWTURNTICS` short-circuit.
-    const turnHeld = (keys.has('ArrowLeft') || keys.has('ArrowRight'));
-    const moving = (keys.has('KeyW') || keys.has('KeyS') ||
-                    keys.has('ArrowUp') || keys.has('ArrowDown') ||
-                    keys.has('KeyA') || keys.has('KeyD'));
-    const turn = (turnHeld && !moving) ? 320 : (fast ? 1280 : 640);
+
+    // g_game.c:262 — accumulative turnheld. Slow turn only for the first
+    // SLOWTURNTICS tics of the press, then accelerate.
+    const turning = keys.has('ArrowLeft') || keys.has('ArrowRight');
+    if (turning === true) turnheld++;
+    else                  turnheld = 0;
+    const tspeed = (turnheld < SLOWTURNTICS) ? 320 : (fast ? 1280 : 640);
+
     if (keys.has('KeyW') || keys.has('ArrowUp'))    cmd.forwardmove =  fwd;
     if (keys.has('KeyS') || keys.has('ArrowDown'))  cmd.forwardmove = -fwd;
     if (keys.has('KeyD'))                            cmd.sidemove    =  side;
     if (keys.has('KeyA'))                            cmd.sidemove    = -side;
-    if (keys.has('ArrowLeft'))  cmd.angleturn =  turn;
-    if (keys.has('ArrowRight')) cmd.angleturn = -turn;
+    if (keys.has('ArrowLeft'))  cmd.angleturn =  tspeed;
+    if (keys.has('ArrowRight')) cmd.angleturn = -tspeed;
+
     // Mouse contribution. Clamp to a 16-bit-safe range so cmd.angleturn
     // (stored as a signed short in demo recordings) doesn't wrap on big spins.
     let mouseTurn = (mouseDX * 8) | 0;
@@ -141,8 +157,28 @@ export const D_KeyboardInput = {
     if (cmd.angleturn >  0x7fff) cmd.angleturn =  0x7fff;
     if (cmd.angleturn < -0x8000) cmd.angleturn = -0x8000;
     mouseDX = 0;
-    if (mouseButtons & 1)        cmd.buttons |= 1; // BT_ATTACK
-    if (keys.has('ControlLeft')) cmd.buttons |= 1;
-    if (keys.has('Space'))       cmd.buttons |= 2; // BT_USE
+
+    // Buttons.
+    const attack = (mouseButtons & 1) !== 0 || keys.has('ControlLeft');
+    const use    = keys.has('Space');
+    if (attack === true) cmd.buttons |= 1; // BT_ATTACK
+    if (use === true) {
+      cmd.buttons |= 2; // BT_USE
+      dclicks = 0;       // pressing Use cancels any pending forward dclick
+    }
+
+    // g_game.c:354 — forward double-click (forward mouse button or W/Up
+    // tapped twice within 20 tics) latches BT_USE. Lets you door-bump
+    // without taking your hand off the move keys.
+    const forwardDC = (mouseButtons & 4) !== 0; // right-mouse here = forward
+    if (forwardDC !== (dclickstate !== 0) && dclicktime > 1) {
+      dclickstate = forwardDC ? 1 : 0;
+      if (dclickstate === 1) dclicks++;
+      if (dclicks === 2) { cmd.buttons |= 2 /*BT_USE*/; dclicks = 0; }
+      else dclicktime = 0;
+    } else {
+      dclicktime++;
+      if (dclicktime > 20) { dclicks = 0; dclickstate = 0; }
+    }
   },
 };

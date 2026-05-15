@@ -28,9 +28,14 @@ export function G_SetExternals(refs) {
   if (refs.loadLevel != null) _loadLevel = refs.loadLevel;
 }
 
-export function G_BuildTiccmd(_cmd) {
-  // Browser port reads input via d_keyboard.js — this is left as a no-op so
-  // upstream callers don't blow up.
+// g_game.c:237 — G_BuildTiccmd. Browser port lives in d_keyboard.js, which
+// owns the gamekeydown[]/mouse state since the DOM event listeners feed it
+// directly. G_BuildTiccmd delegates so external callers (P_Ticker drivers,
+// future D_ProcessEvents) get the same input pipeline.
+export async function G_BuildTiccmd(player) {
+  if (player === null || player === undefined) return;
+  const dk = await import('./d_keyboard.js');
+  dk.D_KeyboardInput.buildCmd(player);
 }
 
 // g_game.c:504 — G_Responder. Central event dispatcher: UI overlays get first
