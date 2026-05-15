@@ -16,7 +16,7 @@ import { gamestate, set_gamestate, gameaction, set_gameaction, gameepisode, game
 import { WI_Start } from './wi_stuff.js';
 import { M_ScreenShot } from './m_misc.js';
 import { gameaction_t } from './d_event.js';
-import { GameMode_t, gamestate_t, skill_t } from './doomdef.js';
+import { GameMode_t, gamestate_t, skill_t, MAXPLAYERS } from './doomdef.js';
 import { P_Random, M_ClearRandom } from './m_random.js';
 import { states, mobjinfo, S_SARG_RUN1, S_SARG_PAIN2,
          MT_BRUISERSHOT, MT_HEADSHOT, MT_TROOPSHOT } from './info.js';
@@ -187,7 +187,7 @@ export function G_DoLoadLevel() {
     _deferred = null;
   }
   // g_game.c:477-482 — revive dead players + reset frags.
-  for (let i = 0; i < 4 /*MAXPLAYERS*/; i++) {
+  for (let i = 0; i < MAXPLAYERS; i++) {
     if (playeringame[i] && players[i] !== null && players[i].playerstate === 1 /*PST_DEAD*/) {
       players[i].playerstate = 2 /*PST_REBORN*/;
     }
@@ -214,7 +214,7 @@ export function G_DoNewGame() {
   doomstat.set_respawnparm?.(false);
   doomstat.set_fastparm?.(false);
   doomstat.set_nomonsters?.(false);
-  for (let i = 1; i < 4 /*MAXPLAYERS*/; i++) {
+  for (let i = 1; i < MAXPLAYERS; i++) {
     if (doomstat.playeringame !== undefined) doomstat.playeringame[i] = false;
   }
   doomstat.set_consoleplayer?.(0);
@@ -371,7 +371,7 @@ export function G_CheckDemoStatus() {
   doomstat.set_fastparm?.(false);
   doomstat.set_nomonsters?.(false);
   if (doomstat.playeringame !== undefined) {
-    for (let i = 1; i < 4 /*MAXPLAYERS*/; i++) doomstat.playeringame[i] = false;
+    for (let i = 1; i < MAXPLAYERS; i++) doomstat.playeringame[i] = false;
   }
   doomstat.set_consoleplayer?.(0);
   _demoBytes = null; _demoPos = 0;

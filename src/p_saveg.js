@@ -199,13 +199,8 @@ export function P_UnArchiveThinkers(arr) {
 //
 // Each special hangs off a thinker as one of: __door, __ceiling, __floor,
 // __plat, __flash, __strobe, __glow, __flick. We dispatch on whichever is
-// present.
-function _sectorIndex(sec) {
-  const ss = imp_sectors();
-  for (let i = 0; i < ss.length; i++) if (ss[i] === sec) return i;
-  return -1;
-}
-
+// present. Sector index comes from sec.index, which p_setup.js:175 stamps
+// onto every sector at load time.
 export function P_ArchiveSpecials() {
   const out = [];
   const cap = globalThis.__doom_thinkercap;
@@ -214,38 +209,38 @@ export function P_ArchiveSpecials() {
   while (cur !== cap) {
     if (cur.__door !== undefined) {
       const d = cur.__door;
-      out.push({ k: 'door', s: _sectorIndex(d.sector), type: d.type, topwait: d.topwait,
+      out.push({ k: 'door', s: d.sector.index, type: d.type, topwait: d.topwait,
         speed: d.speed, topheight: d.topheight, topcountdown: d.topcountdown, direction: d.direction });
     } else if (cur.__ceiling !== undefined) {
       const c = cur.__ceiling;
-      out.push({ k: 'ceil', s: _sectorIndex(c.sector), type: c.type, speed: c.speed,
+      out.push({ k: 'ceil', s: c.sector.index, type: c.type, speed: c.speed,
         crush: c.crush, topheight: c.topheight, bottomheight: c.bottomheight,
         tag: c.tag, direction: c.direction, olddirection: c.olddirection });
     } else if (cur.__floor !== undefined) {
       const f = cur.__floor;
-      out.push({ k: 'floor', s: _sectorIndex(f.sector), type: f.type,
+      out.push({ k: 'floor', s: f.sector.index, type: f.type,
         speed: f.speed, direction: f.direction, crush: f.crush,
         floordestheight: f.floordestheight, newspecial: f.newspecial, texture: f.texture });
     } else if (cur.__plat !== undefined) {
       const p = cur.__plat;
-      out.push({ k: 'plat', s: _sectorIndex(p.sector), type: p.type,
+      out.push({ k: 'plat', s: p.sector.index, type: p.type,
         speed: p.speed, low: p.low, high: p.high, wait: p.wait, count: p.count,
         status: p.status, oldstatus: p.oldstatus, crush: p.crush, tag: p.tag });
     } else if (cur.__flash !== undefined) {
       const f = cur.__flash;
-      out.push({ k: 'flash', s: _sectorIndex(f.sector), count: f.count,
+      out.push({ k: 'flash', s: f.sector.index, count: f.count,
         maxlight: f.maxlight, minlight: f.minlight, maxtime: f.maxtime, mintime: f.mintime });
     } else if (cur.__strobe !== undefined) {
       const s = cur.__strobe;
-      out.push({ k: 'strobe', s: _sectorIndex(s.sector), count: s.count,
+      out.push({ k: 'strobe', s: s.sector.index, count: s.count,
         minlight: s.minlight, maxlight: s.maxlight, darktime: s.darktime, brighttime: s.brighttime });
     } else if (cur.__glow !== undefined) {
       const g = cur.__glow;
-      out.push({ k: 'glow', s: _sectorIndex(g.sector), minlight: g.minlight,
+      out.push({ k: 'glow', s: g.sector.index, minlight: g.minlight,
         maxlight: g.maxlight, direction: g.direction });
     } else if (cur.__flick !== undefined) {
       const f = cur.__flick;
-      out.push({ k: 'flick', s: _sectorIndex(f.sector), count: f.count,
+      out.push({ k: 'flick', s: f.sector.index, count: f.count,
         maxlight: f.maxlight, minlight: f.minlight });
     }
     cur = cur.next;
