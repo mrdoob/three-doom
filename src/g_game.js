@@ -33,11 +33,52 @@ export function G_BuildTiccmd(_cmd) {
   // upstream callers don't blow up.
 }
 
+// g_game.c:504 — G_Responder. Central event dispatcher: UI overlays get first
+// crack, then state-specific handlers, then the play sim. The C source has
+// hardcoded `if (X_Responder(ev)) return true` chains; ours dynamic-imports
+// the UI modules to avoid circular dependencies at module load time. Caches
+// the resolved Responders so steady-state has no async cost.
+let _M_Responder = null;
+let _AM_Responder = null;
+let _WI_Responder = null;
+let _F_Responder = null;
+let _HU_Responder = null;
+let _ST_Responder = null;
+async function _ensureResponders() {
+  if (_M_Responder === null) _M_Responder  = (await import('./m_menu.js')).M_Responder;
+  if (_AM_Responder === null) _AM_Responder = (await import('./am_map.js')).AM_Responder;
+  if (_WI_Responder === null) _WI_Responder = (await import('./wi_stuff.js')).WI_Responder;
+  if (_F_Responder === null)  _F_Responder  = (await import('./f_finale.js')).F_Responder;
+  if (_HU_Responder === null) _HU_Responder = (await import('./hu_stuff.js')).HU_Responder;
+  if (_ST_Responder === null) _ST_Responder = (await import('./st_stuff.js')).ST_Responder;
+}
+
 export function G_Responder(ev) {
-  // Forward to UI overlays first (menu / automap / wipe / finale / intermission).
   if (ev === undefined || ev === null) return false;
+  // Modules may not be wired on the very first frame; bail safely.
+  if (_M_Responder === null) { _ensureResponders(); return false; }
+
+  // Menu first — both vanilla M_Responder and ours own the Esc / arrow / yn
+  // dispatch from outside the level too.
+  if (_M_Responder(ev) === true) return true;
+
+  if (gamestate === gamestate_t.GS_LEVEL) {
+    if (_HU_Responder !== null && _HU_Responder(ev) === true) return true;
+    if (_ST_Responder !== null && _ST_Responder(ev) === true) return true;
+    if (_AM_Responder !== null && _AM_Responder(ev) === true) return true;
+  } else if (gamestate === gamestate_t.GS_INTERMISSION) {
+    if (_WI_Responder !== null && _WI_Responder(ev) === true) return true;
+  } else if (gamestate === gamestate_t.GS_FINALE) {
+    if (_F_Responder !== null && _F_Responder(ev) === true) return true;
+  }
+  // C funnels keydown into gamekeydown[] here. In the JS port d_keyboard
+  // maintains its own keys Set and builds the ticcmd from it, so we just
+  // signal 'unhandled' and let the caller continue.
   return false;
 }
+// Kick off the dynamic imports so the responders are cached by the time
+// the first event fires.
+_ensureResponders();
 
 export function G_Ticker() {
   // g_game.c:G_Ticker uses `while (gameaction != ga_nothing)` so chained
