@@ -29,6 +29,16 @@ const palette14   = new Uint8Array(14 * 256 * 4); // all 14 palettes, prebuilt
 // Cached canvas for upscaling the 320x200 framebuffer.
 let scratchCanvas = null;
 
+// Cache cross-module references at module load — input handlers are a hot
+// path and `await import()` per event adds microtask latency. Dynamic import
+// is only needed to break the i_video ↔ m_menu cycle at startup.
+let _mMenu    = null;
+let _doomstat = null;
+import('./m_menu.js').then((m)  => { _mMenu    = m; });
+import('./doomstat.js').then((d) => { _doomstat = d; });
+
+let _onPointerLockChange = null;
+
 export function I_InitGraphics() {
   // Three.js renderer
   const container = document.getElementById('container');
@@ -68,39 +78,34 @@ export function I_InitGraphics() {
   // Mouse (pointer lock for FPS-style mouse look) — only acquire inside an
   // interactive level. The title screen, menu, and demo playback all keep the
   // pointer free so the user can navigate / leave without being captured.
-  renderer.domElement.addEventListener('click', async () => {
-    const ds = await import('./doomstat.js');
-    if (ds.gamestate === 0 /*GS_LEVEL*/ && ds.demoplayback !== true) {
-      // Active gameplay — capture the mouse for FPS-style look.
+  renderer.domElement.addEventListener('click', () => {
+    if (_doomstat === null) return;
+    if (_doomstat.gamestate === 0 /*GS_LEVEL*/ && _doomstat.demoplayback !== true) {
       if (document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock?.();
       }
       return;
     }
-    // Title / demo / intermission / finale — surface the main menu so the
-    // user can navigate without having to know which key to press.
-    if (ds.menuactive !== true) {
-      const m = await import('./m_menu.js');
-      m.M_StartControlPanel();
-    }
+    // Outside active gameplay, surface the main menu so the user doesn't
+    // have to guess which key wakes it up.
+    if (_doomstat.menuactive !== true && _mMenu !== null) _mMenu.M_StartControlPanel();
   });
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mousedown', onMouseDown);
   window.addEventListener('mouseup',   onMouseUp);
 
-  // The browser captures the first Esc press to drop pointer lock — that keypress
-  // never reaches our keydown handler. Without this listener the user has to press
-  // Esc twice (once to release, once to open the menu). When the lock is dropped
-  // during active gameplay, surface the menu directly.
-  document.addEventListener('pointerlockchange', async () => {
-    if (document.pointerLockElement === renderer.domElement) return; // lock acquired, ignore
-    const ds = await import('./doomstat.js');
-    if (ds.gamestate !== 0 /*GS_LEVEL*/) return;
-    if (ds.demoplayback === true) return;
-    if (ds.menuactive === true) return;
-    const m = await import('./m_menu.js');
-    m.M_StartControlPanel();
-  });
+  // The browser captures the first Esc press to drop pointer lock — that
+  // keypress never reaches our keydown handler. Without this listener the
+  // user has to press Esc twice (once to release, once to open the menu).
+  _onPointerLockChange = () => {
+    if (document.pointerLockElement === renderer.domElement) return;
+    if (_doomstat === null || _mMenu === null) return;
+    if (_doomstat.gamestate !== 0 /*GS_LEVEL*/) return;
+    if (_doomstat.demoplayback === true) return;
+    if (_doomstat.menuactive === true) return;
+    _mMenu.M_StartControlPanel();
+  };
+  document.addEventListener('pointerlockchange', _onPointerLockChange);
 
   // Expose globals on `window` so the dev console can poke at them.
   if (typeof window !== 'undefined') {
@@ -146,6 +151,10 @@ export function I_ShutdownGraphics() {
   window.removeEventListener('mousedown', onMouseDown);
   window.removeEventListener('mouseup',   onMouseUp);
   window.removeEventListener('doom:screenshot', captureScreenshot);
+  if (_onPointerLockChange !== null) {
+    document.removeEventListener('pointerlockchange', _onPointerLockChange);
+    _onPointerLockChange = null;
+  }
 }
 
 function resize() {

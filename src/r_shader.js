@@ -55,6 +55,11 @@ export function R_ShaderInit(playpal_rgba, colormaps) {
   if (_colormapTex === null) _colormapTex = _buildColormapTexture(colormaps);
 }
 
+// Exposed so the sky shader can reuse the same GPU uploads instead of
+// rebuilding identical palette / colormap textures.
+export function R_GetPaletteTexture()  { return _paletteTex; }
+export function R_GetColormapTexture() { return _colormapTex; }
+
 // Build the (R8 index, R8 alpha) data texture from a Uint8Array of palette
 // indices and a matching Uint8Array of alphas (0 = transparent, 255 = opaque).
 // Returns a THREE.DataTexture using RG8 storage so the shader can sample

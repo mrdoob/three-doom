@@ -6,6 +6,12 @@
 
 import { renderer } from './i_video.js';
 
+// Cache cross-module references at module load — keystrokes are a hot path
+// and `await import()` per event adds microtask latency. The dynamic-import
+// dance is only needed at startup to break the i_video ↔ m_menu cycle.
+let _mMenu = null;
+import('./m_menu.js').then((m) => { _mMenu = m; });
+
 const keys = new Set();
 let mouseDX = 0;
 let mouseButtons = 0;
@@ -38,13 +44,10 @@ function installListeners() {
       // Outside active gameplay (title pages / demo playback), any non-Esc
       // keypress opens the main menu so the user doesn't have to know which
       // key to press. Esc keeps the menu closed in that state.
-      if (!ds.menuactive &&
+      if (ds.menuactive !== true &&
           (ds.gamestate === 3 /*GS_DEMOSCREEN*/ ||
            (ds.gamestate === 0 /*GS_LEVEL*/ && ds.demoplayback === true))) {
-        if (e.code !== 'Escape') {
-          const m = await import('./m_menu.js');
-          m.M_StartControlPanel();
-        }
+        if (e.code !== 'Escape' && _mMenu !== null) _mMenu.M_StartControlPanel();
         e.preventDefault?.();
         return;
       }

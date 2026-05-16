@@ -259,11 +259,16 @@ export function R_UpdateSprites() {
     // 0..1. FF_FULLBRIGHT (projectiles, fireballs, plasma) overrides.
     const fullbright = (st.frame & FF_FULLBRIGHT) !== 0;
     let light = 1;
-    if (!fullbright && mo.subsector !== null && mo.subsector.sector !== null) {
+    if (fullbright !== true && mo.subsector !== null && mo.subsector.sector !== null) {
       light = (mo.subsector.sector.lightlevel | 0) / 255;
       if (light < 0) light = 0; else if (light > 1) light = 1;
     }
-    entry.sprite.material.color.setRGB(light, light, light);
+    // Skip the material uniform write when the sector light is unchanged —
+    // typical for thinkers standing still in a static-light room.
+    if (entry._lastLight !== light) {
+      entry.sprite.material.color.setRGB(light, light, light);
+      entry._lastLight = light;
+    }
     if (entry.sprite.visible === false) entry.sprite.visible = true;
   }
 }

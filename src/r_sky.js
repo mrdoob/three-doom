@@ -20,15 +20,19 @@
 import * as THREE from 'three';
 import { gamemode, gameepisode, gamemap } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
-import { R_CheckTextureNumForName, R_GetWallTexture, playpal_rgba, colormaps } from './r_data.js';
+import { R_CheckTextureNumForName, R_GetWallTexture } from './r_data.js';
+import { R_GetPaletteTexture, R_GetColormapTexture } from './r_shader.js';
 import { camera } from './i_video.js';
 
 export let skytexture = -1;
 export let skytexturemid = 0;
 
 let _skyMat = null;
-let _paletteTex = null;
-let _colormapTex = null;
+// Cache for R_UpdateSky's per-frame trig: hfovHalfTan only changes when
+// camera.fov or camera.aspect change (resize / FOV slider).
+let _cachedFov    = -1;
+let _cachedAspect = -1;
+let _hfovHalfTan  = 1;
 
 // Mirrors g_game.c:454-468.
 export function R_InitSkyMap() {
@@ -109,28 +113,6 @@ void main() {
 }
 `;
 
-function _buildPaletteTexture() {
-  const rgba = playpal_rgba.slice(0, 256 * 4);
-  const tex = new THREE.DataTexture(rgba, 256, 1, THREE.RGBAFormat);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.flipY = false;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-function _buildColormapTexture() {
-  const tex = new THREE.DataTexture(colormaps, 256, 34, THREE.RedFormat);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.flipY = false;
-  tex.internalFormat = 'R8';
-  tex.needsUpdate = true;
-  return tex;
-}
-
 export function R_BuildSky(levelRoot) {
   R_InitSkyMap();
   if (skytexture < 0) return null;
@@ -145,14 +127,15 @@ export function R_BuildSky(levelRoot) {
   map.wrapT = THREE.RepeatWrapping;
   map.needsUpdate = true;
 
-  if (_paletteTex === null)  _paletteTex  = _buildPaletteTexture();
-  if (_colormapTex === null) _colormapTex = _buildColormapTexture();
+  // Dispose the previous level's material so a long session of map changes
+  // doesn't leak shader programs / uniform buffers.
+  if (_skyMat !== null) _skyMat.dispose();
 
   _skyMat = new THREE.ShaderMaterial({
     uniforms: {
       map:          { value: map },
-      palette:      { value: _paletteTex },
-      colormap:     { value: _colormapTex },
+      palette:      { value: R_GetPaletteTexture() },
+      colormap:     { value: R_GetColormapTexture() },
       viewangle:    { value: 0 },
       hfovHalfTan:  { value: 1.0 },
       skyTexHeight: { value: map.image.height },
@@ -181,8 +164,12 @@ export function R_UpdateSky() {
   // so doom_angle = rotation.y + π/2.
   _skyMat.uniforms.viewangle.value = camera.rotation.y + Math.PI / 2;
   // hfov derived from camera vfov + aspect: hfov = 2 * atan(tan(vfov/2) * aspect).
-  // We store tan(hfov/2) = tan(vfov/2) * aspect — exactly the value the shader
-  // multiplies by sc.x.
-  const vfovRad = camera.fov * Math.PI / 180;
-  _skyMat.uniforms.hfovHalfTan.value = Math.tan(vfovRad / 2) * camera.aspect;
+  // Only changes on resize / FOV change, so cache and skip the trig per frame.
+  if (camera.fov !== _cachedFov || camera.aspect !== _cachedAspect) {
+    const vfovRad = camera.fov * Math.PI / 180;
+    _hfovHalfTan  = Math.tan(vfovRad / 2) * camera.aspect;
+    _cachedFov    = camera.fov;
+    _cachedAspect = camera.aspect;
+    _skyMat.uniforms.hfovHalfTan.value = _hfovHalfTan;
+  }
 }
