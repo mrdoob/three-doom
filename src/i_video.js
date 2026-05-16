@@ -70,15 +70,37 @@ export function I_InitGraphics() {
   // pointer free so the user can navigate / leave without being captured.
   renderer.domElement.addEventListener('click', async () => {
     const ds = await import('./doomstat.js');
-    if (ds.gamestate !== 0 /*GS_LEVEL*/) return;
-    if (ds.demoplayback) return;
-    if (document.pointerLockElement !== renderer.domElement) {
-      renderer.domElement.requestPointerLock?.();
+    if (ds.gamestate === 0 /*GS_LEVEL*/ && ds.demoplayback !== true) {
+      // Active gameplay — capture the mouse for FPS-style look.
+      if (document.pointerLockElement !== renderer.domElement) {
+        renderer.domElement.requestPointerLock?.();
+      }
+      return;
+    }
+    // Title / demo / intermission / finale — surface the main menu so the
+    // user can navigate without having to know which key to press.
+    if (ds.menuactive !== true) {
+      const m = await import('./m_menu.js');
+      m.M_StartControlPanel();
     }
   });
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mousedown', onMouseDown);
   window.addEventListener('mouseup',   onMouseUp);
+
+  // The browser captures the first Esc press to drop pointer lock — that keypress
+  // never reaches our keydown handler. Without this listener the user has to press
+  // Esc twice (once to release, once to open the menu). When the lock is dropped
+  // during active gameplay, surface the menu directly.
+  document.addEventListener('pointerlockchange', async () => {
+    if (document.pointerLockElement === renderer.domElement) return; // lock acquired, ignore
+    const ds = await import('./doomstat.js');
+    if (ds.gamestate !== 0 /*GS_LEVEL*/) return;
+    if (ds.demoplayback === true) return;
+    if (ds.menuactive === true) return;
+    const m = await import('./m_menu.js');
+    m.M_StartControlPanel();
+  });
 
   // Expose globals on `window` so the dev console can poke at them.
   if (typeof window !== 'undefined') {

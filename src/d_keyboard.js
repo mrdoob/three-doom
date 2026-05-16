@@ -34,10 +34,23 @@ function installListeners() {
           e.code === 'ControlLeft' || e.code === 'AltLeft' || e.code === 'Tab') {
         e.preventDefault?.();
       }
+      const ds = await import('./doomstat.js');
+      // Outside active gameplay (title pages / demo playback), any non-Esc
+      // keypress opens the main menu so the user doesn't have to know which
+      // key to press. Esc keeps the menu closed in that state.
+      if (!ds.menuactive &&
+          (ds.gamestate === 3 /*GS_DEMOSCREEN*/ ||
+           (ds.gamestate === 0 /*GS_LEVEL*/ && ds.demoplayback === true))) {
+        if (e.code !== 'Escape') {
+          const m = await import('./m_menu.js');
+          m.M_StartControlPanel();
+        }
+        e.preventDefault?.();
+        return;
+      }
       // Intermission screen — any keypress advances. Check this before
       // automap / cheats so the press-to-continue gesture isn't mistaken
       // for an in-game action. (gamestate_t.GS_INTERMISSION === 1)
-      const ds = await import('./doomstat.js');
       if (ds.gamestate === 1 /*GS_INTERMISSION*/) {
         const wi = await import('./wi_stuff.js');
         if (wi.WI_Responder({ type: 0, data1: e.keyCode | 0 })) {
