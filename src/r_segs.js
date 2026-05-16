@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { lines, sides, numlines } from './p_setup.js';
 import { ML_TWOSIDED, ML_DONTPEGTOP, ML_DONTPEGBOTTOM } from './doomdata.js';
+import { skyflatnum } from './doomstat.js';
 import { R_GetWallTexture, textures, R_RegisterWallMesh } from './r_data.js';
 import { R_MakeDoomMaterial } from './r_shader.js';
 
@@ -201,8 +202,14 @@ export function R_BuildWalls(scene) {
       if (li.v1.y === li.v2.y)      backLight = Math.max(0,   backLight - 16);
       else if (li.v1.x === li.v2.x) backLight = Math.min(255, backLight + 16);
 
+      // r_segs.c:530-534 — "hack to allow height changes in outdoor areas":
+      // when both sectors' ceilings are the sky flat, vanilla skips the upper
+      // texture entirely, so the sky bleeds across the height difference
+      // instead of revealing a wall standing against the sky.
+      const skyToSky = front.ceilingpic === skyflatnum && back.ceilingpic === skyflatnum;
+
       // Front upper.
-      if (frontCeiling > backCeiling) {
+      if (frontCeiling > backCeiling && skyToSky !== true) {
         const texH = _texH(sd0.toptexture);
         const anchor = dontPegTop ? frontCeiling : (backCeiling + texH);
         const bi = pushQuad(opaqueBuckets, sd0.toptexture, x1, y1, x2, y2, backCeiling, frontCeiling,
@@ -251,7 +258,7 @@ export function R_BuildWalls(scene) {
       // Back side (mirror).
       const sd1 = sides[li.sidenum[1]];
       if (sd1 !== undefined) {
-        if (backCeiling > frontCeiling) {
+        if (backCeiling > frontCeiling && skyToSky !== true) {
           const texH = _texH(sd1.toptexture);
           const anchor = dontPegTop ? backCeiling : (frontCeiling + texH);
           const bi = pushQuad(opaqueBuckets, sd1.toptexture, x1, y1, x2, y2, frontCeiling, backCeiling,
