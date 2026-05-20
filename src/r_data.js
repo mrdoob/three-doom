@@ -291,6 +291,15 @@ export function R_RegisterWallMesh(texnum, mesh) {
   if (s === undefined) { s = new Set(); _meshesByTexnum.set(texnum, s); }
   s.add(mesh);
 }
+
+// Drop every registered mesh. Called by R_NewMap before the old level group
+// is torn down — otherwise these Maps keep the previous level's (disposed)
+// meshes and their BufferGeometry attribute arrays alive, leaking ~1MB per
+// level load.
+export function R_ClearMeshRegistry() {
+  _meshesByTexnum.clear();
+  _meshesByFlatnum.clear();
+}
 export function R_RegisterFlatMesh(flatnum, mesh) {
   let s = _meshesByFlatnum.get(flatnum);
   if (s === undefined) { s = new Set(); _meshesByFlatnum.set(flatnum, s); }

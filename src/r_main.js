@@ -10,6 +10,7 @@ import { ANG90 } from './tables.js';
 import { R_BuildWalls } from './r_segs.js';
 import { R_BuildPlanes } from './r_plane.js';
 import { R_BuildSpriteBillboards, R_ClearSpriteCache, set_view as set_thing_view } from './r_things.js';
+import { R_ClearMeshRegistry } from './r_data.js';
 import { R_BuildSky, R_UpdateSky } from './r_sky.js';
 import { R_PointInSubsector } from './r_bsp.js';
 import { segs } from './p_setup.js';
@@ -33,6 +34,9 @@ export function R_NewMap() {
     // Sprite textures are cached per-lump in r_things.js. Clear so the next map
     // rebuilds them (they're keyed on lump index which spans the whole WAD).
     R_ClearSpriteCache();
+    // Drop the animated-texture mesh registry — it referenced the meshes we
+    // just disposed; r_segs/r_plane re-register fresh meshes for the new map.
+    R_ClearMeshRegistry();
   }
   _levelRoot = new THREE.Group();
   _levelRoot.name = 'level';

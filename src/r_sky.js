@@ -28,6 +28,11 @@ export let skytexture = -1;
 export let skytexturemid = 0;
 
 let _skyMat = null;
+// The cloned sky texture from R_GetWallTexture — held so the next R_BuildSky
+// can dispose it. R_NewMap's _levelRoot teardown skips material.map.dispose()
+// (wall textures are cache-owned), but this clone is owned solely by the sky,
+// so without an explicit dispose it leaks one GPU texture per level load.
+let _skyMap = null;
 // Cache for R_UpdateSky's per-frame trig: hfovHalfTan only changes when
 // camera.fov or camera.aspect change (resize / FOV slider).
 let _cachedFov    = -1;
@@ -127,9 +132,11 @@ export function R_BuildSky(levelRoot) {
   map.wrapT = THREE.RepeatWrapping;
   map.needsUpdate = true;
 
-  // Dispose the previous level's material so a long session of map changes
-  // doesn't leak shader programs / uniform buffers.
+  // Dispose the previous level's material + cloned texture so a long session
+  // of map changes doesn't leak shader programs / uniform buffers / textures.
   if (_skyMat !== null) _skyMat.dispose();
+  if (_skyMap !== null) _skyMap.dispose();
+  _skyMap = map;
 
   _skyMat = new THREE.ShaderMaterial({
     uniforms: {
