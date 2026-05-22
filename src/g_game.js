@@ -553,7 +553,11 @@ export function G_DoWorldDone() {
   } else {
     set_gamemap(gamemap + 1);
   }
-  set_gameaction(gameaction_t.ga_loadlevel);
+  // g_game.c:G_DoWorldDone calls G_DoLoadLevel directly. It must NOT defer via
+  // set_gameaction(ga_loadlevel): the G_Ticker `ga_worlddone` case clears
+  // gameaction right after this returns, which would clobber that queued
+  // action and the next level would never load.
+  G_DoLoadLevel();
 }
 // g_game.c:897 — random DM spawn (vanilla uses P_Random).
 export function G_DeathMatchSpawnPlayer(playernum) {

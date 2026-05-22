@@ -107,10 +107,7 @@ export function R_UpdateSectorWalls(sector) {
 // lightlevel changes. Mirrors the build-time fake-contrast bake.
 function updateContribLight(c) {
   if (c.bucket === undefined || c.bucket.mesh === undefined) return;
-  if (c.lightSector === undefined || c.lightSector === null) return;
-  let light = c.lightSector.lightlevel + c.contrast;
-  if (light < 0) light = 0; else if (light > 255) light = 255;
-  light /= 255;
+  const light = Math.max(0, Math.min(255, c.lightSector.lightlevel + c.contrast)) / 255;
   const col = c.bucket.mesh.geometry.attributes.color;
   for (let i = 0; i < 4; i++) col.setXYZ(c.baseIdx + i, light, light, light);
   col.needsUpdate = true;
