@@ -14,6 +14,7 @@ import { menuactive, set_menuactive, gamestate, gamemode } from './doomstat.js';
 import { GameMode_t, KEY_UPARROW, KEY_DOWNARROW, KEY_LEFTARROW, KEY_RIGHTARROW,
   KEY_BACKSPACE, KEY_ESCAPE, KEY_ENTER } from './doomdef.js';
 import { G_DeferedInitNew, G_LoadGame, G_SaveGame } from './g_game.js';
+import { HU_ToggleMessages } from './hu_stuff.js';
 import { D_AcquirePointerLock } from './d_keyboard.js';
 import { V_DecodePatchToCanvas, V_DrawPatchAtCanvas } from './v_video.js';
 const getPatch = V_DecodePatchToCanvas;
@@ -41,7 +42,6 @@ let _detailLevel  = 0;  // 0=high, 1=low
 // is screenSize = screenblocks - 3 = 6 (m_menu.c:1854).
 let _screenSize   = 6;
 let _screenblocks = 9;
-let _messages     = 1;
 let _mouseSens    = 5;
 
 export function getScreenblocks() { return _screenblocks; }
@@ -78,7 +78,7 @@ const SKILL_MENU = { name: 'Skill', x: 48, y: 63, items: [
 
 const OPTIONS_MENU = { name: 'Options', x: 60, y: 37, items: [
   { patch: 'M_ENDGAM', label: 'End Game',          action: () => M_EndGame() },
-  { patch: 'M_MESSG',  label: 'Messages',          action: () => { _messages ^= 1; } },
+  { patch: 'M_MESSG',  label: 'Messages',          action: () => HU_ToggleMessages() },
   { patch: 'M_DETAIL', label: 'Graphic Detail',    action: () => { _detailLevel ^= 1; } },
   { patch: 'M_SCRNSZ', label: 'Screen Size',       slider: true, get: () => _screenSize, set: (v) => M_SizeDisplay(v > _screenSize ? 1 : 0) },
   { patch: 'M_MSENS',  label: 'Mouse Sensitivity', slider: true, get: () => _mouseSens,  set: (v) => { _mouseSens  = Math.max(0, Math.min(9, v)); } },

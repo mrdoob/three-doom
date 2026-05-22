@@ -196,6 +196,9 @@ export function G_DoLoadLevel() {
     }
   }
   set_gameaction(gameaction_t.ga_nothing);
+  // g_game.c:494 — a level load clears any pause held over from the menu or a
+  // prior level. (sendpause/sendsave are netgame ticcmd flags — not ported.)
+  doomstat.set_paused(false);
   if (_loadLevel !== null) _loadLevel(gameepisode, gamemap, gameskill);
 }
 

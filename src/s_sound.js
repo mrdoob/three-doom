@@ -103,11 +103,19 @@ function S_AdjustSoundParams(listener, source) {
   const lmo = listener.mo;
   const dx = source.x - lmo.x;
   const dy = source.y - lmo.y;
-  const adist = approxDist(dx, dy);
-  if (adist > S_CLIPPING_DIST) return null;
+  let adist = approxDist(dx, dy);
+  // s_sound.c:773 — map 8 (the episode boss arena) never clips by distance.
+  if (gamemap !== 8 && adist > S_CLIPPING_DIST) return null;
+  // Volume is computed in snd_SfxVolume units (0..15) then scaled *8 to the
+  // 0..127 range i_sound.js expects (15*8 = 120 ~= 127 peak).
   let vol;
   if (adist < S_CLOSE_DIST) {
     vol = snd_SfxVolume * 8;
+  } else if (gamemap === 8) {
+    // s_sound.c:800 — boss-arena taper floored at 15/15 so it stays loud.
+    if (adist > S_CLIPPING_DIST) adist = S_CLIPPING_DIST;
+    vol = (120 + (snd_SfxVolume * 8 - 120) *
+          (S_CLIPPING_DIST - adist) / (S_CLIPPING_DIST - S_CLOSE_DIST)) | 0;
   } else {
     vol = ((snd_SfxVolume * 8) * (S_CLIPPING_DIST - adist) / (S_CLIPPING_DIST - S_CLOSE_DIST)) | 0;
   }
@@ -137,20 +145,31 @@ function S_AdjustSoundParams(listener, source) {
 const _SFX_ITEMUP = 32;
 const _SFX_TINK   = 33; // sfx_tink — vanilla actually fixes only itemup/tink.
 
+// s_sound.c:404 — S_StartSound plays sfxid at the menu's current SFX volume.
 export function S_StartSound(origin, sfxid) {
+  S_StartSoundAtVolume(origin, sfxid, snd_SfxVolume);
+}
+
+// s_sound.c:253 — S_StartSoundAtVolume. `volume` is in snd_SfxVolume units
+// (0..15). Positional sounds discard it and re-derive volume from distance
+// (vanilla quirk); non-positional sounds play at `volume` directly.
+export function S_StartSoundAtVolume(origin, sfxid, volume) {
   if (sfxid <= 0 || sfxid >= S_sfx.length) return;
   let sfx = S_sfx[sfxid];
   let priority = sfx.priority;
-  let volBoost = 0;
   let pitch = NORM_PITCH;
 
-  // s_sound.c:362 — honor sfx->link. The linked entry's priority/pitch/volume
-  // override the originally-requested sfx. Used by sfx_chgun -> sfx_pistol so
-  // the chaingun fires the pistol's sample at pitch 150.
+  // s_sound.c:281 — honor sfx->link. The linked entry's priority/pitch
+  // override the originally-requested sfx and its volume biases `volume`.
+  // Used by sfx_chgun -> sfx_pistol so the chaingun fires the pistol's
+  // sample at pitch 150. The JS port also substitutes the linked sample id
+  // (the IWAD ships no standalone chaingun sample).
   if (sfx.link !== undefined && sfx.link !== null) {
     const linked = S_sfx[sfx.link];
     pitch    = (sfx.pitch  !== undefined && sfx.pitch  !== 0) ? sfx.pitch  : NORM_PITCH;
-    volBoost = (sfx.volume !== undefined) ? sfx.volume : 0;
+    volume  += (sfx.volume !== undefined) ? sfx.volume : 0;
+    if (volume < 1) return;
+    if (volume > snd_SfxVolume) volume = snd_SfxVolume;
     priority = linked.priority;
     sfxid    = sfx.link;
     sfx      = linked;
@@ -170,11 +189,11 @@ export function S_StartSound(origin, sfxid) {
     if (pitch > 255) pitch = 255;
   }
 
-  let vol = snd_SfxVolume * 8 + volBoost, sep = NORM_SEP;
+  let vol = volume * 8, sep = NORM_SEP;
   if (origin !== null && origin !== undefined && _listener !== null && origin !== _listener.mo) {
     const p = S_AdjustSoundParams(_listener, origin);
     if (p === null) return; // out of range
-    vol = p.vol + volBoost; sep = p.sep;
+    vol = p.vol; sep = p.sep;
   }
   if (vol <= 0) return;
   // s_sound.c:483 — same-origin replacement: kill any existing channel from
@@ -194,11 +213,6 @@ export function S_StartSound(origin, sfxid) {
   channels[ch].sfxinfo = sfx;
   channels[ch].origin  = origin;
   channels[ch].handle  = I.I_StartSound(sfxid, vol, sep, pitch, priority);
-}
-
-export function S_StartSoundAtVolume(origin, sfxid, _volume) {
-  // _volume override would scale snd_SfxVolume; minimum port just routes.
-  S_StartSound(origin, sfxid);
 }
 
 export function S_StopSound(origin) {

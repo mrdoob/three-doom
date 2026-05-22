@@ -4,6 +4,12 @@
 import { players, consoleplayer, gameepisode, gamemap, gamemode } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
 import { V_DecodePatchToCanvas } from './v_video.js';
+import { MSGON, MSGOFF } from './d_englsh.js';
+
+// hu_stuff.c:showMessages — when false, gameplay messages are suppressed.
+// The toggle's own confirmation message is forced through regardless
+// (vanilla's message_dontfuckwithme).
+export let showMessages = true;
 
 export const HU_FONTSTART = '!'.charCodeAt(0);  // 33
 export const HU_FONTEND   = '_'.charCodeAt(0);  // 95
@@ -85,10 +91,19 @@ export function HU_Start() {
 }
 
 // Push a message into the HUD. Called by P_TouchSpecialThing via player.message.
-export function HU_QueueMessage(text) {
+// `force` shows the message even when messages are toggled off.
+export function HU_QueueMessage(text, force) {
   if (text === null || text === undefined || text === '') return;
+  if (showMessages === false && force !== true) return;
   _msgText = String(text);
   _msgCounter = HU_MSGTIMEOUT;
+}
+
+// m_menu.c:M_ChangeMessages — flip the message display on/off and show the
+// confirmation message itself (forced through the showMessages gate).
+export function HU_ToggleMessages() {
+  showMessages = !showMessages;
+  HU_QueueMessage(showMessages ? MSGON : MSGOFF, true);
 }
 
 export function HU_Ticker() {

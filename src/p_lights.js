@@ -1,11 +1,10 @@
 // Ported from: linuxdoom-1.10/p_lights.c
 // Sector light effects: flicker, broken-flash, strobe, glow.
 //
-// The vertex-color light values in r_segs/r_plane are baked at level load,
-// so changing sector.lightlevel here doesn't currently propagate to the
-// rendered geometry. A follow-up pass should add R_UpdateSectorLight that
-// rewrites the color attribute. For now the thinkers update the data structure
-// but visual flicker won't appear until that hook is added.
+// The vertex-color light values in r_segs/r_plane are baked at level load.
+// Each thinker that mutates sector.lightlevel calls applyLight(), which
+// invokes the injected R_UpdateSectorLight to rewrite the floor/ceiling and
+// wall color attributes so the change is visible.
 
 import { sectors, numsectors } from './p_setup.js';
 import { P_Random } from './m_random.js';

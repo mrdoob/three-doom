@@ -161,7 +161,7 @@ export function R_BuildPlanes(scene) {
 // R_UpdateSectorPlanes — call after sector.floorheight or .ceilingheight changes.
 // Updates the Y (height) component of every vertex contributed by this sector,
 // and the walls that touch this sector (door/lift/floor animation).
-import { R_UpdateSectorWalls } from './r_segs.js';
+import { R_UpdateSectorWalls, R_UpdateSectorWallLight } from './r_segs.js';
 export function R_UpdateSectorPlanes(sector) {
   const arr = _sectorContribs.get(sector);
   if (arr !== undefined) {
@@ -178,16 +178,19 @@ export function R_UpdateSectorPlanes(sector) {
 }
 
 // R_UpdateSectorLight — call after sector.lightlevel changes. Updates the
-// per-vertex color on this sector's floor + ceiling contributions.
+// per-vertex color on this sector's floor + ceiling contributions, plus the
+// walls whose light is driven by this sector.
 export function R_UpdateSectorLight(sector) {
   const arr = _sectorContribs.get(sector);
-  if (arr === undefined) return;
-  const l = sector.lightlevel / 255;
-  for (const c of arr) {
-    const col = c.bucket.mesh.geometry.attributes.color;
-    for (let i = 0; i < c.vertexCount; i++) {
-      col.setXYZ(c.startVertex + i, l, l, l);
+  if (arr !== undefined) {
+    const l = sector.lightlevel / 255;
+    for (const c of arr) {
+      const col = c.bucket.mesh.geometry.attributes.color;
+      for (let i = 0; i < c.vertexCount; i++) {
+        col.setXYZ(c.startVertex + i, l, l, l);
+      }
+      col.needsUpdate = true;
     }
-    col.needsUpdate = true;
   }
+  R_UpdateSectorWallLight(sector);
 }

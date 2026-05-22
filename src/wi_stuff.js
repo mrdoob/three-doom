@@ -5,8 +5,9 @@
 // Player presses a key to skip ahead; auto-advances after configured wait.
 
 import { gameepisode, gamemap, gamemode, players, consoleplayer } from './doomstat.js';
-import { S_StartSound } from './s_sound.js';
+import { S_StartSound, S_ChangeMusic } from './s_sound.js';
 import { GameMode_t } from './doomdef.js';
+import { mus_inter, mus_dm2int } from './sounds.js';
 
 const TICRATE = 35;
 
@@ -85,6 +86,8 @@ export function WI_Start(wbstartstruct, onDone) {
   _cntKills = _cntItems = _cntSecret = _cntTime = _cntPar = 0;
   _cntStage = 0; _stageTic = 0; _tickedSound = false;
   _active   = true;
+  // wi_stuff.c:WI_Ticker (bcnt==1) — start the intermission music.
+  S_ChangeMusic(gamemode === GameMode_t.commercial ? mus_dm2int : mus_inter, true);
 }
 export function WI_End() { _active = false; }
 export function WI_isActive() { return _active; }

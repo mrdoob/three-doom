@@ -1,19 +1,21 @@
 // Ported from: linuxdoom-1.10/p_enemy.c
 // Monster AI: A_Look, A_Chase, A_FaceTarget, A_*Attack, A_Pain, A_Fall, etc.
-// This minimum port wires the core idle/chase loop and a generic attack hook
-// so monsters spot and pursue the player. The boss specials and many of the
-// flashy attacks (Vile resurrect, Mancubus fireball spread, etc.) are TODO.
+// This port wires the core idle/chase loop, a generic attack hook, the boss
+// specials, and the per-monster action functions (including A_VileChase's
+// corpse resurrection).
 
-import { P_RegisterAction, states, mobjinfo, actionRegistry, S_BRAINEXPLODE1 } from './info.js';
-import { P_SetMobjState, MF_SHOOTABLE, MF_AMBUSH, MF_JUSTHIT, MF_JUSTATTACKED, MF_SOLID, MF_SKULLFLY, P_SpawnMissile, P_SpawnMobj, P_SpawnPuff, P_RemoveMobj } from './p_mobj.js';
-import { P_TeleportMove } from './p_map.js';
+import { P_RegisterAction, states, mobjinfo, actionRegistry, S_BRAINEXPLODE1, S_VILE_HEAL1 } from './info.js';
+import { P_SetMobjState, MF_SHOOTABLE, MF_AMBUSH, MF_JUSTHIT, MF_JUSTATTACKED, MF_SOLID, MF_SKULLFLY, MF_CORPSE, P_SpawnMissile, P_SpawnMobj, P_SpawnPuff, P_RemoveMobj } from './p_mobj.js';
+import { P_TeleportMove, P_CheckPosition } from './p_map.js';
+import { P_BlockThingsIterator } from './p_maputl.js';
+import { bmaporgx, bmaporgy } from './p_setup.js';
 import { players, consoleplayer, playeringame, gameepisode, gamemap, gamemode, gameskill, gametic } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
 import { ANGLETOFINESHIFT, FINEMASK, finecosine, finesine } from './tables.js';
 import { P_CheckSight } from './p_sight.js';
 import { R_PointToAngle2 } from './r_bsp.js';
 import { MT_BRUISER, MT_CYBORG, MT_SPIDER, MT_HEADSHOT, MT_TROOPSHOT, MT_BRUISERSHOT, MT_FATSO, MT_FATSHOT, MT_VILE, MT_UNDEAD, MT_FIRE, MT_TRACER, MT_SKULL, MT_BABY, MT_PAIN, MT_BOSSBRAIN, MT_BOSSSPIT, MT_BOSSTARGET, MT_SPAWNSHOT, MT_SPAWNFIRE, MT_ROCKET, MT_ARACHPLAZ, MT_TROOP, MT_SERGEANT, MT_SHADOWS, MT_HEAD, MT_KNIGHT } from './info.js';
-import { sfx_claw } from './sounds.js';
+import { sfx_claw, sfx_slop } from './sounds.js';
 import { EV_DoFloor, lowerFloorToLowest, raiseToTexture } from './p_floor.js';
 import { EV_DoDoor } from './p_doors.js';
 import { P_Random } from './m_random.js';
@@ -813,11 +815,62 @@ P_RegisterAction('A_PainDie', (a) => {
   painShootSkull(a, (a.angle + ANG180) >>> 0);
   painShootSkull(a, (a.angle + ANG270) >>> 0);
 });
-// Arch-vile (MT_VILE) — simplified port. Real A_VileChase scans for corpses to
-// resurrect; we implement the attack chain (Start/Target/Fire/Attack).
+// Arch-vile (MT_VILE) corpse-raise scan. PIT_VileCheck communicates its hit
+// back through these module-scope statics, mirroring p_enemy.c's globals.
+const VILE_MAXRADIUS = 32 * 65536;   // p_local.h MAXRADIUS
+const VILE_MAPBLOCKSHIFT = 23;       // FRACBITS + 7
+let _viletryx = 0, _viletryy = 0, _corpsehit = null;
+
+// p_enemy.c:PIT_VileCheck — true to keep scanning, false when a raisable
+// corpse is found (and stored in _corpsehit).
+function PIT_VileCheck(thing) {
+  if ((thing.flags & MF_CORPSE) === 0) return true;          // not a monster
+  if (thing.tics !== -1) return true;                        // not lying still
+  if (thing.info.raisestate === 0 /*S_NULL*/) return true;   // no raise state
+  const maxdist = thing.info.radius + mobjinfo[MT_VILE].radius;
+  if (Math.abs(thing.x - _viletryx) > maxdist ||
+      Math.abs(thing.y - _viletryy) > maxdist) return true;  // not touching
+  _corpsehit = thing;
+  _corpsehit.momx = _corpsehit.momy = 0;
+  _corpsehit.height <<= 2;
+  const check = P_CheckPosition(_corpsehit, _corpsehit.x, _corpsehit.y);
+  _corpsehit.height >>= 2;
+  if (check !== true) return true;                           // doesn't fit
+  return false;                                              // got one
+}
+
+// p_enemy.c:A_VileChase — scan for a corpse to resurrect; otherwise chase.
 P_RegisterAction('A_VileChase', (actor) => {
-  // Resurrect chain is omitted (requires P_Random + thinker walk + mobj
-  // state-table reset). Fall back to A_Chase so the Vile still pursues.
+  if (actor.movedir !== 8 /*DI_NODIR*/) {
+    const speed = actor.info.speed;
+    _viletryx = (actor.x + speed * xspeed[actor.movedir]) | 0;
+    _viletryy = (actor.y + speed * yspeed[actor.movedir]) | 0;
+    const xl = (_viletryx - bmaporgx - VILE_MAXRADIUS * 2) >> VILE_MAPBLOCKSHIFT;
+    const xh = (_viletryx - bmaporgx + VILE_MAXRADIUS * 2) >> VILE_MAPBLOCKSHIFT;
+    const yl = (_viletryy - bmaporgy - VILE_MAXRADIUS * 2) >> VILE_MAPBLOCKSHIFT;
+    const yh = (_viletryy - bmaporgy + VILE_MAXRADIUS * 2) >> VILE_MAPBLOCKSHIFT;
+    for (let bx = xl; bx <= xh; bx++) {
+      for (let by = yl; by <= yh; by++) {
+        if (P_BlockThingsIterator(bx, by, PIT_VileCheck) === false) {
+          // got one — resurrect it.
+          const temp = actor.target;
+          actor.target = _corpsehit;
+          faceTarget(actor);
+          actor.target = temp;
+          P_SetMobjState(actor, S_VILE_HEAL1);
+          if (_S !== null) _S.S_StartSound(_corpsehit, sfx_slop);
+          const info = _corpsehit.info;
+          P_SetMobjState(_corpsehit, info.raisestate);
+          _corpsehit.height <<= 2;
+          _corpsehit.flags = info.flags;
+          _corpsehit.health = info.spawnhealth;
+          _corpsehit.target = null;
+          return;
+        }
+      }
+    }
+  }
+  // Return to normal attack.
   actionRegistry['A_Chase']?.(actor);
 });
 P_RegisterAction('A_VileStart',   (a) => { if (_S !== null) _S.S_StartSound(a, 54 /*sfx_vilatk*/); });

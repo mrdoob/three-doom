@@ -103,6 +103,29 @@ export function R_UpdateSectorWalls(sector) {
   for (const c of arr) updateContrib(c);
 }
 
+// Recompute a quad's vertex colors when its light-driving sector's
+// lightlevel changes. Mirrors the build-time fake-contrast bake.
+function updateContribLight(c) {
+  if (c.bucket === undefined || c.bucket.mesh === undefined) return;
+  if (c.lightSector === undefined || c.lightSector === null) return;
+  let light = c.lightSector.lightlevel + c.contrast;
+  if (light < 0) light = 0; else if (light > 255) light = 255;
+  light /= 255;
+  const col = c.bucket.mesh.geometry.attributes.color;
+  for (let i = 0; i < 4; i++) col.setXYZ(c.baseIdx + i, light, light, light);
+  col.needsUpdate = true;
+}
+
+// R_UpdateSectorWallLight — call after sector.lightlevel changes. Updates
+// the vertex colors of every wall quad whose light is driven by this sector.
+export function R_UpdateSectorWallLight(sector) {
+  const arr = _wallContribs.get(sector);
+  if (arr === undefined) return;
+  for (const c of arr) {
+    if (c.lightSector === sector) updateContribLight(c);
+  }
+}
+
 // One mesh per (texture index, masked?) pair, plus the parent group placed
 // in the scene. Midtextures on two-sided linedefs land in the masked bucket
 // — vanilla draws those via R_RenderMaskedSegRange / R_DrawMaskedColumn so
@@ -180,9 +203,10 @@ export function R_BuildWalls(scene) {
     // Fake contrast — r_segs.c R_RenderSegLoop: horizontal lines get
     // lightlevel-16, vertical lines get lightlevel+16. Computed once per
     // linedef in vanilla; baked into per-quad vertex colors here.
-    let baseLight = lightlevel;
-    if (li.v1.y === li.v2.y)      baseLight = Math.max(0,   baseLight - 16);
-    else if (li.v1.x === li.v2.x) baseLight = Math.min(255, baseLight + 16);
+    let contrast = 0;
+    if (li.v1.y === li.v2.y)      contrast = -16;
+    else if (li.v1.x === li.v2.x) contrast = 16;
+    const baseLight = Math.max(0, Math.min(255, lightlevel + contrast));
 
     if ((li.flags & ML_TWOSIDED) === 0 || li.backsector === null) {
       const texH = _texH(sd0.midtexture);
@@ -192,15 +216,13 @@ export function R_BuildWalls(scene) {
       if (bi >= 0) attachContrib(front, {
         bucket: opaqueBuckets.get(sd0.midtexture), baseIdx: bi, front, back: null,
         kind: 'one-sided', rowoffset: sd0.rowoffset/65536, texH,
-        dontPegTop, dontPegBottom,
+        dontPegTop, dontPegBottom, lightSector: front, contrast,
       });
     } else {
       const back = li.backsector;
       const backFloor   = back.floorheight   / 65536;
       const backCeiling = back.ceilingheight / 65536;
-      let backLight = back.lightlevel;
-      if (li.v1.y === li.v2.y)      backLight = Math.max(0,   backLight - 16);
-      else if (li.v1.x === li.v2.x) backLight = Math.min(255, backLight + 16);
+      const backLight = Math.max(0, Math.min(255, back.lightlevel + contrast));
 
       // r_segs.c:530-534 — "hack to allow height changes in outdoor areas":
       // when both sectors' ceilings are the sky flat, vanilla skips the upper
@@ -217,7 +239,7 @@ export function R_BuildWalls(scene) {
         if (bi >= 0) {
           const c = { bucket: opaqueBuckets.get(sd0.toptexture), baseIdx: bi, front, back,
             kind: 'upper-front', rowoffset: sd0.rowoffset/65536, texH,
-            dontPegTop, dontPegBottom };
+            dontPegTop, dontPegBottom, lightSector: front, contrast };
           attachContrib(front, c); attachContrib(back, c);
         }
       }
@@ -232,7 +254,7 @@ export function R_BuildWalls(scene) {
         if (bi >= 0) {
           const c = { bucket: opaqueBuckets.get(sd0.bottomtexture), baseIdx: bi, front, back,
             kind: 'lower-front', rowoffset: sd0.rowoffset/65536, texH,
-            dontPegTop, dontPegBottom };
+            dontPegTop, dontPegBottom, lightSector: front, contrast };
           attachContrib(front, c); attachContrib(back, c);
         }
       }
@@ -249,7 +271,7 @@ export function R_BuildWalls(scene) {
           if (bi >= 0) {
             const c = { bucket: maskedBuckets.get(sd0.midtexture), baseIdx: bi, front, back,
               kind: 'middle-front', rowoffset: sd0.rowoffset/65536, texH,
-              dontPegTop, dontPegBottom };
+              dontPegTop, dontPegBottom, lightSector: front, contrast };
             attachContrib(front, c); attachContrib(back, c);
           }
         }
@@ -266,7 +288,7 @@ export function R_BuildWalls(scene) {
           if (bi >= 0) {
             const c = { bucket: opaqueBuckets.get(sd1.toptexture), baseIdx: bi, front, back,
               kind: 'upper-back', rowoffset: sd1.rowoffset/65536, texH,
-              dontPegTop, dontPegBottom };
+              dontPegTop, dontPegBottom, lightSector: back, contrast };
             attachContrib(front, c); attachContrib(back, c);
           }
         }
@@ -278,7 +300,7 @@ export function R_BuildWalls(scene) {
           if (bi >= 0) {
             const c = { bucket: opaqueBuckets.get(sd1.bottomtexture), baseIdx: bi, front, back,
               kind: 'lower-back', rowoffset: sd1.rowoffset/65536, texH,
-              dontPegTop, dontPegBottom };
+              dontPegTop, dontPegBottom, lightSector: back, contrast };
             attachContrib(front, c); attachContrib(back, c);
           }
         }
