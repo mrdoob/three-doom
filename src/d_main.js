@@ -477,6 +477,13 @@ export async function D_DoomMain() {
   });
   const pSwitch = await import('./p_switch.js');
   pSwitch.P_SwitchSetExternals({ S });
+  // p_setup.c:P_Init calls P_InitSwitchList — builds the switch off/on texture
+  // pairs. Episode gates the set (shareware=1, registered/retail=2,
+  // commercial=3). Without this switchlist stays empty and no switch flips.
+  pSwitch.P_InitSwitchList(
+    doomstat.gamemode === GameMode_t.commercial ? 3
+    : (doomstat.gamemode === GameMode_t.registered ||
+       doomstat.gamemode === GameMode_t.retail) ? 2 : 1);
   pSpec.P_SpecSetExternals({ PLights: pLights });
   pSpec.P_SpecSetFloor({ PFloor: pFloor });
   pSpec.P_SpecSetInter({ PInter: pInter });
