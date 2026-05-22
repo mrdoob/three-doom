@@ -103,6 +103,22 @@ export function R_InitSprites() {
 
 const _spriteTextureCache = new Map(); // lump index -> { tex, w, h, offsetX, offsetY }
 
+// Wrap an RGBA buffer as a sprite DataTexture with Doom's display settings.
+function makeSpriteDataTexture(data, w, h) {
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  // Doom patches store row 0 at the top; THREE.Sprite samples V=0 at bottom.
+  // Flip so sprites display upright (without flipY, they appear inverted).
+  tex.flipY = true;
+  // sRGB so the shader linearises Doom's already-gamma-encoded palette colors
+  // before any lighting math; output sRGB then gamma-encodes the result.
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function buildSpriteTexture(spriteLumpIndex) {
   const cached = _spriteTextureCache.get(spriteLumpIndex);
   if (cached !== undefined) return cached;
@@ -130,27 +146,41 @@ function buildSpriteTexture(spriteLumpIndex) {
       colptr += length + 4;
     }
   }
-  const tex = new THREE.DataTexture(rgba, w, h, THREE.RGBAFormat);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  // Doom patches store row 0 at the top; THREE.Sprite samples V=0 at bottom.
-  // Flip so sprites display upright (without flipY, they appear inverted).
-  tex.flipY = true;
-  // sRGB so the shader linearises Doom's already-gamma-encoded palette colors
-  // before any lighting math; output sRGB then gamma-encodes the result.
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  const info = { tex, w, h, offsetX: p.leftoffset, offsetY: p.topoffset };
+  const tex = makeSpriteDataTexture(rgba, w, h);
+  const info = { tex, texFlipped: null, w, h, offsetX: p.leftoffset, offsetY: p.topoffset };
   _spriteTextureCache.set(spriteLumpIndex, info);
   return info;
+}
+
+// Doom's `flip` rotations (6/7/8 reuse 4/3/2's lumps mirrored). THREE.Sprite
+// ignores a negative scale.x, so we build a genuinely horizontally-mirrored
+// texture and cache it lazily on the lump's entry.
+function getFlippedTexture(info) {
+  if (info.texFlipped !== null) return info.texFlipped;
+  const w = info.w, h = info.h;
+  const src = info.tex.image.data;
+  const dst = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const s = (y * w + (w - 1 - x)) * 4;
+      const d = (y * w + x) * 4;
+      dst[d] = src[s]; dst[d + 1] = src[s + 1];
+      dst[d + 2] = src[s + 2]; dst[d + 3] = src[s + 3];
+    }
+  }
+  const tex = makeSpriteDataTexture(dst, w, h);
+  info.texFlipped = tex;
+  return tex;
 }
 
 // Dispose every cached sprite texture and drop the cache. Called from
 // R_NewMap before the level group is torn down, since wall/sprite materials
 // (in the old level) still reference these textures and would leak otherwise.
 export function R_ClearSpriteCache() {
-  for (const entry of _spriteTextureCache.values()) entry.tex.dispose();
+  for (const entry of _spriteTextureCache.values()) {
+    entry.tex.dispose();
+    if (entry.texFlipped !== null) entry.texFlipped.dispose();
+  }
   _spriteTextureCache.clear();
 }
 
@@ -238,12 +268,13 @@ export function R_UpdateSprites() {
     }
     if (lumpIdx < 0) continue;
     const t = buildSpriteTexture(lumpIdx);
-    if (entry.sprite.material.map !== t.tex) {
-      entry.sprite.material.map = t.tex;
+    const tex = flipped === 1 ? getFlippedTexture(t) : t.tex;
+    if (entry.sprite.material.map !== tex) {
+      entry.sprite.material.map = tex;
       entry.sprite.material.needsUpdate = true;
-      entry.sprite.scale.set(flipped ? -t.w : t.w, t.h, 1);
-    } else if (entry.sprite.scale.x !== (flipped ? -t.w : t.w)) {
-      entry.sprite.scale.x = flipped ? -t.w : t.w;
+    }
+    if (entry.sprite.scale.x !== t.w || entry.sprite.scale.y !== t.h) {
+      entry.sprite.scale.set(t.w, t.h, 1);
     }
     // Vanilla R_ProjectSprite anchors the sprite top at (mobj.z + topoffset)
     // and draws downwards; bottom edge sits at (mobj.z + topoffset - height).
