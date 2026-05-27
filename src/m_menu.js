@@ -10,14 +10,19 @@
 // The 3D port draws menus via Canvas2D using the WAD's M_* patches when
 // available, falling back to a monospace font for items.
 
-import { menuactive, set_menuactive, gamestate, gamemode } from './doomstat.js';
+import { menuactive, set_menuactive, gamestate, gamemode, demoplayback } from './doomstat.js';
 import { GameMode_t, KEY_UPARROW, KEY_DOWNARROW, KEY_LEFTARROW, KEY_RIGHTARROW,
   KEY_BACKSPACE, KEY_ESCAPE, KEY_ENTER } from './doomdef.js';
 import { G_DeferedInitNew, G_LoadGame, G_SaveGame } from './g_game.js';
 import { HU_ToggleMessages } from './hu_stuff.js';
 import { D_AcquirePointerLock } from './d_keyboard.js';
-import { V_DecodePatchToCanvas, V_DrawPatchAtCanvas } from './v_video.js';
+import { V_DecodePatchToCanvas, V_DrawPatchAtCanvas, V_RegisterPNGPatch } from './v_video.js';
 const getPatch = V_DecodePatchToCanvas;
+
+// M_CONT isn't a WAD lump; it's a user-supplied PNG in the project root for
+// the in-game "Continue" entry. Load it asynchronously — until it's ready
+// the menu's text fallback ("Continue") renders in its place.
+V_RegisterPNGPatch('M_CONT', './M_CONT.png');
 
 // ---------- Menu structure ----------
 let _currentMenu = null;
@@ -52,14 +57,16 @@ const SAVE_SLOTS = 6;
 const _saveStrings = new Array(SAVE_SLOTS).fill('EMPTY SLOT');
 
 // ---------- Menus ----------
-const MAIN_MENU = { name: 'Main', patch: 'M_DOOM', x: 97, y: 64, items: [
+const CONTINUE_ITEM = { patch: 'M_CONT', label: 'Continue', action: () => M_ClearMenus() };
+const MAIN_MENU_BASE_ITEMS = [
   { patch: 'M_NGAME',  label: 'New Game',  action: () => pushMenu(EPISODE_MENU) },
   { patch: 'M_OPTION', label: 'Options',   action: () => pushMenu(OPTIONS_MENU) },
   { patch: 'M_LOADG',  label: 'Load Game', action: () => pushMenu(LOAD_MENU) },
   { patch: 'M_SAVEG',  label: 'Save Game', action: () => pushMenu(SAVE_MENU) },
   { patch: 'M_RDTHIS', label: 'Read This!', action: () => pushMenu(READ_MENU_1) },
   { patch: 'M_QUITG',  label: 'Quit',      action: () => M_QuitDOOM() },
-]};
+];
+const MAIN_MENU = { name: 'Main', patch: 'M_DOOM', x: 97, y: 64, items: MAIN_MENU_BASE_ITEMS };
 
 const EPISODE_MENU = { name: 'Episode', x: 48, y: 63, items: [
   { patch: 'M_EPI1', label: 'Knee-Deep in the Dead', action: () => _chooseEpisode(1) },
@@ -201,6 +208,13 @@ export function M_Init() {
 export function M_StartControlPanel() {
   if (menuactive) return;
   set_menuactive(true);
+  // Continue is only meaningful when the user has started a game — i.e. a
+  // level is active AND it isn't a title-screen demo playing in the
+  // background.
+  const inUserGame = gamestate === 0 /*GS_LEVEL*/ && demoplayback !== true;
+  MAIN_MENU.items = inUserGame
+    ? [CONTINUE_ITEM, ...MAIN_MENU_BASE_ITEMS]
+    : MAIN_MENU_BASE_ITEMS;
   _currentMenu = MAIN_MENU;
   _menuStack = [];
   _selected = 0;
@@ -293,9 +307,12 @@ export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
     const it = m.items[i];
     const ix = dstX + baseX * sx;
     const iy = dstY + (baseY + i * LINE_HEIGHT) * sy;
-    if (it.patch) {
-      const p = getPatch(it.patch);
-      if (p !== null) drawPatchAt(overlayCtx, p, ix, iy, sx, sy);
+    // Patch if available; otherwise fall back to the text label. The fallback
+    // also covers patches that aren't yet ready (e.g. M_CONT loading from a
+    // PNG file) and lookups that miss the WAD.
+    const p = it.patch ? getPatch(it.patch) : null;
+    if (p !== null) {
+      drawPatchAt(overlayCtx, p, ix, iy, sx, sy);
     } else {
       overlayCtx.fillStyle = '#cccccc';
       overlayCtx.font = `bold ${Math.round(12 * sy)}px monospace`;

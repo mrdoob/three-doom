@@ -267,7 +267,29 @@ export function V_GetBlock(x, y, scrn, width, height, dest) {
 // across hu_stuff / st_stuff / m_menu / f_finale. Returns
 // `{ canvas, w, h, leftoffset, topoffset }` or null if the lump is missing.
 const _patchCanvasCache = new Map();
+// External PNG files registered as patches (e.g. UI graphics that aren't in
+// the WAD). Lookup wins over the WAD path so callers don't need to know.
+const _pngOverrides = new Map();
+// Load a PNG from `url` and expose it under `name` so V_DecodePatchToCanvas
+// returns it like a WAD patch. Asynchronous: until the image finishes
+// loading, the lookup falls through (the menu drawer's text fallback covers
+// the gap).
+export function V_RegisterPNGPatch(name, url, leftoffset = 0, topoffset = 0) {
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0);
+    _pngOverrides.set(name, { canvas: c, w: c.width, h: c.height, leftoffset, topoffset });
+  };
+  img.onerror = () => {
+    console.warn(`V_RegisterPNGPatch: failed to load "${name}" from ${url}`);
+  };
+  img.src = url;
+}
 export function V_DecodePatchToCanvas(name) {
+  const override = _pngOverrides.get(name);
+  if (override !== undefined) return override;
   if (_patchCanvasCache.has(name)) return _patchCanvasCache.get(name);
   const lumpNum = W_CheckNumForName(name);
   if (lumpNum === -1) { _patchCanvasCache.set(name, null); return null; }
