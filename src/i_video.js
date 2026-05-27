@@ -86,6 +86,10 @@ export function I_InitGraphics() {
       }
       return;
     }
+    // Intermission / finale own their own input — clicking should not hijack
+    // them into opening the menu, or the user can never get past them.
+    if (_doomstat.gamestate === 1 /*GS_INTERMISSION*/ ||
+        _doomstat.gamestate === 2 /*GS_FINALE*/) return;
     // Outside active gameplay, surface the main menu so the user doesn't
     // have to guess which key wakes it up.
     if (_doomstat.menuactive !== true && _mMenu !== null) _mMenu.M_StartControlPanel();

@@ -54,12 +54,18 @@ function installListeners() {
       // Intermission screen — any keypress advances. Check this before
       // automap / cheats so the press-to-continue gesture isn't mistaken
       // for an in-game action. (gamestate_t.GS_INTERMISSION === 1)
+      //
+      // ALWAYS consume the key while gamestate==INTERMISSION, even if
+      // WI_Responder returns false (it does once WI._active flips off after
+      // onDone fires — there's a 1-tic gap before gamestate transitions to
+      // GS_LEVEL). Without the unconditional swallow, an Escape pressed in
+      // that window falls through to the menu branch below and opens the
+      // main menu instead of doing nothing.
       if (ds.gamestate === 1 /*GS_INTERMISSION*/) {
         const wi = await import('./wi_stuff.js');
-        if (wi.WI_Responder({ type: 0, data1: e.keyCode | 0 })) {
-          e.preventDefault?.();
-          return;
-        }
+        wi.WI_Responder({ type: 0, data1: e.keyCode | 0 });
+        e.preventDefault?.();
+        return;
       }
       // Single-shot automap controls.
       if (e.code === 'Tab') {
