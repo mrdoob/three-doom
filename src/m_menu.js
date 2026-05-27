@@ -61,8 +61,8 @@ const CONTINUE_ITEM = { patch: 'M_CONT', label: 'Continue', action: () => M_Clea
 const MAIN_MENU_BASE_ITEMS = [
   { patch: 'M_NGAME',  label: 'New Game',  action: () => pushMenu(EPISODE_MENU) },
   { patch: 'M_OPTION', label: 'Options',   action: () => pushMenu(OPTIONS_MENU) },
-  { patch: 'M_LOADG',  label: 'Load Game', action: () => pushMenu(LOAD_MENU) },
-  { patch: 'M_SAVEG',  label: 'Save Game', action: () => pushMenu(SAVE_MENU) },
+  // { patch: 'M_LOADG',  label: 'Load Game', action: () => pushMenu(LOAD_MENU) },
+  // { patch: 'M_SAVEG',  label: 'Save Game', action: () => pushMenu(SAVE_MENU) },
   { patch: 'M_RDTHIS', label: 'Read This!', action: () => pushMenu(READ_MENU_1) },
   { patch: 'M_QUITG',  label: 'Quit',      action: () => M_QuitDOOM() },
 ];
