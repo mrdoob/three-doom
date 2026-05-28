@@ -59,7 +59,7 @@ const _saveStrings = new Array(SAVE_SLOTS).fill('EMPTY SLOT');
 // ---------- Menus ----------
 const CONTINUE_ITEM = { patch: 'M_CONT', label: 'Continue', action: () => M_ClearMenus() };
 const MAIN_MENU_BASE_ITEMS = [
-  { patch: 'M_NGAME',  label: 'New Game',  action: () => pushMenu(EPISODE_MENU) },
+  { patch: 'M_NGAME',  label: 'New Game',  action: () => _openEpisodeMenu() },
   { patch: 'M_OPTION', label: 'Options',   action: () => pushMenu(OPTIONS_MENU) },
   // { patch: 'M_LOADG',  label: 'Load Game', action: () => pushMenu(LOAD_MENU) },
   // { patch: 'M_SAVEG',  label: 'Save Game', action: () => pushMenu(SAVE_MENU) },
@@ -68,12 +68,23 @@ const MAIN_MENU_BASE_ITEMS = [
 ];
 const MAIN_MENU = { name: 'Main', patch: 'M_DOOM', x: 97, y: 64, items: MAIN_MENU_BASE_ITEMS };
 
-const EPISODE_MENU = { name: 'Episode', x: 48, y: 63, items: [
+// m_menu.c:1882 — shareware and registered show 3 episodes, retail shows 4.
+// (Shareware fall-throughs to registered: `EpiDef.numitems--`.) In shareware,
+// Ep2/3 are visible but _chooseEpisode routes them to the "order to play"
+// ad-screen. Only Ep4 is hidden outside retail — and only retail ships M_EPI4
+// as a WAD patch anyway, so this also keeps the text-fallback font from
+// leaking into the menu.
+const EPISODE_ITEMS = [
   { patch: 'M_EPI1', label: 'Knee-Deep in the Dead', action: () => _chooseEpisode(1) },
   { patch: 'M_EPI2', label: 'The Shores of Hell',     action: () => _chooseEpisode(2) },
   { patch: 'M_EPI3', label: 'Inferno',                action: () => _chooseEpisode(3) },
   { patch: 'M_EPI4', label: 'Thy Flesh Consumed',     action: () => _chooseEpisode(4) },
-]};
+];
+const EPISODE_MENU = { name: 'Episode', x: 48, y: 63, items: EPISODE_ITEMS };
+function _openEpisodeMenu() {
+  EPISODE_MENU.items = EPISODE_ITEMS.slice(0, gamemode === GameMode_t.retail ? 4 : 3);
+  pushMenu(EPISODE_MENU);
+}
 
 const SKILL_MENU = { name: 'Skill', x: 48, y: 63, items: [
   { patch: 'M_JKILL', label: "I'm too young to die.", action: () => _chooseSkill(0) },
