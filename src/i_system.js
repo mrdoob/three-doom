@@ -56,8 +56,5 @@ export function I_Tactile(_on, _off, _total) {
 export function I_Error(...args) {
   const msg = args.length === 1 ? String(args[0]) : args.map(String).join(' ');
   console.error('I_Error:', msg);
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('doom:error', { detail: msg }));
-  }
   throw new Error(msg);
 }
