@@ -296,7 +296,13 @@ export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
   }
   if (_currentMenu === null) return;
   const m = _currentMenu;
-  const sx = dstW / 320, sy = dstH / 200;
+  // Letterbox the menu layout to a 4:3 box centered in the passed area so
+  // patches and items don't stretch with window aspect. Background dim and
+  // modal overlay still cover the full passed box.
+  const scale = Math.min(dstW / 320, dstH / 200);
+  const sx = scale, sy = scale;
+  const lx = dstX + (dstW - 320 * scale) * 0.5;
+  const ly = dstY + (dstH - 200 * scale) * 0.5;
   // Background dim only when not over title screen.
   if (gamestate === 0 /*GS_LEVEL*/) {
     overlayCtx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -304,20 +310,20 @@ export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
   }
   if (m.fullscreen) {
     const help = getPatch(m.fullscreen);
-    if (help !== null) drawPatchAt(overlayCtx, help, dstX, dstY, sx, sy);
+    if (help !== null) drawPatchAt(overlayCtx, help, lx, ly, sx, sy);
   }
   // Main menu draws the DOOM logo at the top.
   if (m.patch) {
     const title = getPatch(m.patch);
-    if (title !== null) drawPatchAt(overlayCtx, title, dstX + 94 * sx, dstY + 2 * sy, sx, sy);
+    if (title !== null) drawPatchAt(overlayCtx, title, lx + 94 * sx, ly + 2 * sy, sx, sy);
   }
   // Items.
   const baseX = m.x, baseY = m.y;
   const LINE_HEIGHT = 16;
   for (let i = 0; i < m.items.length; i++) {
     const it = m.items[i];
-    const ix = dstX + baseX * sx;
-    const iy = dstY + (baseY + i * LINE_HEIGHT) * sy;
+    const ix = lx + baseX * sx;
+    const iy = ly + (baseY + i * LINE_HEIGHT) * sy;
     // Patch if available; otherwise fall back to the text label. The fallback
     // also covers patches that aren't yet ready (e.g. M_CONT loading from a
     // PNG file) and lookups that miss the WAD.
@@ -344,14 +350,14 @@ export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
   // Skull cursor next to the selected item.
   const cur = getPatch(SKULL_NAMES[_skullFrame]);
   if (cur !== null) {
-    const cx = dstX + (baseX - 32) * sx;
-    const cy = dstY + (baseY - 5 + _selected * LINE_HEIGHT) * sy;
+    const cx = lx + (baseX - 32) * sx;
+    const cy = ly + (baseY - 5 + _selected * LINE_HEIGHT) * sy;
     drawPatchAt(overlayCtx, cur, cx, cy, sx, sy);
   } else {
     // Fallback ">" marker.
     overlayCtx.fillStyle = '#ff8';
     overlayCtx.font = `bold ${Math.round(14 * sy)}px monospace`;
-    overlayCtx.fillText('►', dstX + (baseX - 16) * sx, dstY + (baseY + 12 + _selected * LINE_HEIGHT) * sy);
+    overlayCtx.fillText('►', lx + (baseX - 16) * sx, ly + (baseY + 12 + _selected * LINE_HEIGHT) * sy);
   }
   // Modal message renders on top.
   if (_message !== null) drawMessage(overlayCtx, dstX, dstY, dstW, dstH);
