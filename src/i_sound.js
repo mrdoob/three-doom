@@ -24,6 +24,12 @@ function getCtx() {
   return _ctx;
 }
 
+// The browser blocks AudioContext from playing until the user interacts with
+// the page; calling .start() on a source before then logs a noisy warning per
+// call. canDispatch() gates every audio output behind a running context — the
+// browser auto-resumes on first user gesture so the gate flips on its own.
+function canDispatch() { return _ctx !== null && _ctx.state === 'running'; }
+
 function decodeDMX(bytes) {
   // Read header.
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -108,6 +114,7 @@ let _nextHandle = 1;
 const _activeSources = new Map();
 export function I_StartSound(id, vol, sep, pitch, _priority) {
   if (_sfxInfo === null) return 0;
+  if (canDispatch() !== true) return 0;
   const info = _sfxInfo[id];
   if (info === undefined) return 0;
   const name = 'DS' + info.name.toUpperCase();
@@ -186,6 +193,7 @@ function _stopNote(channel) {
 
 function _playNote(channel, note, vel) {
   if (_musicCtx === null) return;
+  if (canDispatch() !== true) return;
   _stopNote(channel);
   const osc = _musicCtx.createOscillator();
   const gain = _musicCtx.createGain();
@@ -236,6 +244,9 @@ function _processOneEvent() {
 
 function _musicTick() {
   if (_musicCtx === null || _musicScore === null) return;
+  // Don't advance the score while the AudioContext is still suspended —
+  // we'd silently chew through the intro and jump in mid-bar once it resumes.
+  if (canDispatch() !== true) return;
   if (_musicWaiting > 0) { _musicWaiting--; return; }
   for (let safety = 0; safety < 64; safety++) {
     if (!_processOneEvent()) return;
