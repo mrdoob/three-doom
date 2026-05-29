@@ -418,6 +418,8 @@ function InitChannel(channel) {
 
 // --- Public API ---
 export function OPL_InitMusic(sampleRate) {
+  _sampleRate = sampleRate;
+  _samplesPerTic = sampleRate / MUS_TICRATE;
   chip = new DBOPLChip(sampleRate);
   OPL_InitRegisters(opl_opl3mode);
   InitVoices();
@@ -482,3 +484,163 @@ export const OPLEvents = {
   controller: ControllerEvent,
   pitchBend: PitchBendEvent,
 };
+
+// ===========================================================================
+// MUS reader / sequencer (Option B)
+//
+// Reads MUS lump events directly and drives the OPL core, folding in the
+// MUS->MIDI semantic mapping from Chocolate Doom's mus2mid.c (cached
+// velocities, controller_map, pitchwheel = key*64 -> MSB, system events). MUS
+// runs at a fixed 140 Hz tic rate; we advance the score sample-accurately
+// between OPL_Generate() calls so this drops straight into an AudioWorklet.
+// ===========================================================================
+
+// mus2mid.c controller_map: MUS controller/system number -> MIDI controller.
+const controller_map = [
+  0x00, 0x20, 0x01, 0x07, 0x0a, 0x0b, 0x5b, 0x5d,
+  0x40, 0x43, 0x78, 0x7b, 0x7e, 0x7f, 0x79,
+];
+
+const MUS_TICRATE = 140;
+
+let _sampleRate = 48000;
+let _score = null;
+let _scoreStart = 0;
+let _scoreEnd = 0;
+let _scorePos = 0;
+const _vel = new Uint8Array(16);     // cached channel velocities (mus2mid)
+let _looping = false;
+let _playing = false;
+let _paused = false;
+let _samplesUntilEvent = 0;          // fractional samples until the next event block
+let _samplesPerTic = _sampleRate / MUS_TICRATE;
+const _scratch = new Int32Array(8192);
+
+// Int32 OPL sample -> float scale. Tuned so a busy song sits below clipping;
+// final loudness is set by the music volume + Web Audio gain in the wiring layer.
+let OPL_GAIN = 1 / 10240;
+
+function readDelay() {
+  let delay = 0, b;
+  do { b = _score[_scorePos++]; delay = delay * 128 + (b & 0x7f); } while (b & 0x80);
+  return delay;
+}
+
+// Process one block of simultaneous MUS events. Returns ticks until the next
+// block, or -1 at end-of-score.
+function processBlock() {
+  for (;;) {
+    if (_scorePos >= _scoreEnd) return -1;
+    const desc = _score[_scorePos++];
+    const type = desc & 0x70;
+    const channel = desc & 0x0f;
+    if (type === 0x00) {            // release key
+      const key = _score[_scorePos++];
+      KeyOffEvent(channel, key & 0x7f);
+    } else if (type === 0x10) {     // press key
+      let key = _score[_scorePos++];
+      if (key & 0x80) { _vel[channel] = _score[_scorePos++] & 0x7f; key &= 0x7f; }
+      KeyOnEvent(channel, key & 0x7f, _vel[channel]);
+    } else if (type === 0x20) {     // pitch wheel
+      const b = _score[_scorePos++];
+      PitchBendEvent(channel, ((b * 64) >> 7) & 0x7f);
+    } else if (type === 0x30) {     // system event (valueless controller)
+      const cn = _score[_scorePos++];
+      if (cn >= 10 && cn <= 14) ControllerEvent(channel, controller_map[cn], 0);
+    } else if (type === 0x40) {     // change controller
+      const cn = _score[_scorePos++];
+      let val = _score[_scorePos++];
+      if (cn === 0) {
+        ProgramChangeEvent(channel, val & 0x7f);
+      } else if (cn >= 1 && cn <= 9) {
+        if (val & 0x80) val = 0x7f; // mus2mid clamps out-of-range controller values
+        ControllerEvent(channel, controller_map[cn], val);
+      }
+    } else if (type === 0x60) {     // score end
+      return -1;
+    }
+    // types 0x50 / 0x70 are unused in MUS — skip with no data bytes.
+    if (desc & 0x80) return readDelay();
+  }
+}
+
+// Register a MUS lump for playback (parse header, locate the score).
+export function I_OPL_RegisterSong(lump) {
+  const view = new DataView(lump.buffer, lump.byteOffset, lump.byteLength);
+  const scoreLen = view.getUint16(4, true);
+  const scoreStart = view.getUint16(6, true);
+  _score = lump;
+  _scoreStart = scoreStart;
+  _scoreEnd = scoreStart + scoreLen;
+  _scorePos = scoreStart;
+}
+
+export function I_OPL_PlaySong(looping) {
+  if (_score === null) return;
+  _looping = !!looping;
+  _scorePos = _scoreStart;
+  _vel.fill(127);
+  OPL_ResetChannels();
+  _samplesUntilEvent = 0;   // process the first block immediately
+  _playing = true;
+  _paused = false;
+}
+
+export function I_OPL_StopSong() {
+  _playing = false;
+  OPL_AllVoicesOff();
+}
+
+export function I_OPL_PauseSong() {
+  _paused = true;
+  // Vanilla turns off the main instrument voices (not percussion) on pause.
+  for (let i = 0; i < num_opl_voices; ++i) {
+    if (voices[i].channel !== null && voices[i].channel !== channels[15]) {
+      VoiceKeyOff(voices[i]);
+    }
+  }
+}
+
+export function I_OPL_ResumeSong() { _paused = false; }
+
+export function I_OPL_SongPlaying() { return _playing; }
+
+export function I_OPL_SetGain(g) { OPL_GAIN = g; }
+
+// Fill `numSamples` of mono float audio in [-1, 1] into `out` (Float32Array),
+// advancing the MUS sequencer sample-accurately and rendering the OPL chip in
+// between events.
+export function I_OPL_FillBuffer(out, numSamples) {
+  let produced = 0;
+  let guard = 0;
+  while (produced < numSamples) {
+    if (_playing && !_paused) {
+      // Process any events that are due (delay accumulated below 1 sample).
+      while (_samplesUntilEvent < 1) {
+        if (++guard > 100000) { _playing = false; break; } // degenerate-song backstop
+        const r = processBlock();
+        if (r < 0) {
+          if (_looping) { _scorePos = _scoreStart; _vel.fill(127); OPL_ResetChannels(); }
+          else { _playing = false; break; }
+        } else {
+          _samplesUntilEvent += r * _samplesPerTic;
+        }
+      }
+    }
+    let chunk = numSamples - produced;
+    if (_playing && !_paused) {
+      const avail = Math.floor(_samplesUntilEvent);
+      if (avail < chunk) chunk = avail;
+    }
+    if (chunk < 1) chunk = 1;
+    if (chunk > _scratch.length) chunk = _scratch.length;
+    OPL_Generate(_scratch, chunk);
+    for (let i = 0; i < chunk; i++) {
+      let s = _scratch[i] * OPL_GAIN;
+      if (s > 1) s = 1; else if (s < -1) s = -1;
+      out[produced + i] = s;
+    }
+    produced += chunk;
+    if (_playing && !_paused) _samplesUntilEvent -= chunk;
+  }
+}
