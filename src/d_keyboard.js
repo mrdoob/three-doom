@@ -112,6 +112,10 @@ function installListeners() {
       }
       // Weapon switching: digit keys 1..7 -> wp_fist .. wp_bfg.
       if (e.code.startsWith('Digit')) {
+        // Vanilla ST_Responder feeds every key (digits included) to the cheat
+        // sequencer; without this IDMUS could never collect its 2-digit param.
+        const digCh = e.code.slice(5).charCodeAt(0); // '0'..'9'
+        await import('./m_cheat.js').then(m => m.cht_HandleKey(digCh));
         const slot = parseInt(e.code.slice(5), 10);
         if (slot >= 1 && slot <= 7) {
           const ds = await import('./doomstat.js');

@@ -3,7 +3,11 @@
 // but the practical wrapper here registers explicit code -> action handlers so
 // it slots cleanly into the JS keyboard event path.
 
-import { players, consoleplayer } from './doomstat.js';
+import { players, consoleplayer, gamemode } from './doomstat.js';
+import { GameMode_t } from './doomdef.js';
+import { S_ChangeMusic } from './s_sound.js';
+import { mus_runnin, mus_e1m1 } from './sounds.js';
+import { STSTR_MUS, STSTR_NOMUS } from './d_englsh.js';
 
 // C macro: bit i of input -> bit j of output. From m_cheat.h:
 //   bit 0 -> 7, bit 1 -> 6, bit 2 -> 2, bit 3 -> 4,
@@ -23,10 +27,20 @@ function SCRAMBLE(a) {
 const xlate = new Uint8Array(256);
 for (let i = 0; i < 256; i++) xlate[i] = SCRAMBLE(i);
 
-export function makeCheatSeq(seqStr) {
-  const bytes = new Uint8Array(seqStr.length + 1);
-  for (let i = 0; i < seqStr.length; i++) bytes[i] = xlate[seqStr.charCodeAt(i)];
-  bytes[seqStr.length] = 0xff;
+// paramCount > 0 appends a '1' separator followed by that many zeroed capture
+// slots, matching m_cheat.h's parameter encoding (e.g. cheat_mus_seq =
+// { ...idmus..., 1, 0, 0, 0xff }). cht_CheckCheat captures the keys typed after
+// the sequence into the slots; cht_GetParam reads them back.
+export function makeCheatSeq(seqStr, paramCount = 0) {
+  const extra = paramCount > 0 ? 1 + paramCount : 0;
+  const bytes = new Uint8Array(seqStr.length + extra + 1);
+  let i = 0;
+  for (; i < seqStr.length; i++) bytes[i] = xlate[seqStr.charCodeAt(i)];
+  if (paramCount > 0) {
+    bytes[i++] = 1;
+    for (let k = 0; k < paramCount; k++) bytes[i++] = 0;
+  }
+  bytes[i] = 0xff;
   return { sequence: bytes, p: 0 };
 }
 
@@ -83,6 +97,23 @@ const cheats = [
   { seq: makeCheatSeq('idfa'),   apply: (p) => { p.armorpoints = 200; p.armortype = 2; for (let i = 0; i < 9; i++) p.weaponowned[i] = true; for (let i = 0; i < 4; i++) p.ammo[i] = p.maxammo[i]; p.message = 'Ammo (No Keys) Added'; } },
   { seq: makeCheatSeq('idclip'), apply: (p) => { p.cheats ^= 1 /*CF_NOCLIP*/; if (p.mo) { if (p.cheats & 1) p.mo.flags |= 0x1000 /*MF_NOCLIP*/; else p.mo.flags &= ~0x1000; } p.message = (p.cheats & 1) ? 'No Clipping Mode On' : 'No Clipping Mode Off'; } },
   { seq: makeCheatSeq('idspispopd'), apply: (p) => { p.cheats ^= 1; if (p.mo) { if (p.cheats & 1) p.mo.flags |= 0x1000; else p.mo.flags &= ~0x1000; } p.message = (p.cheats & 1) ? 'No Clipping Mode On' : 'No Clipping Mode Off'; } },
+  // st_stuff.c:595 — 'idmus##' changes music. Doom 1 reads ExMy from the two
+  // digits (mus_e1m1 + (d0-'1')*9 + (d1-'1')); commercial reads MAPxx
+  // (mus_runnin + d0d1 - 1). Out-of-range prints STSTR_NOMUS.
+  { seq: makeCheatSeq('idmus', 2), apply: (p, seq) => {
+    const buf = new Uint8Array(3);
+    cht_GetParam(seq, buf);
+    p.message = STSTR_MUS;
+    if (gamemode === GameMode_t.commercial) {
+      const n = (buf[0] - 0x30) * 10 + (buf[1] - 0x30);
+      if (n > 35) p.message = STSTR_NOMUS;
+      else        S_ChangeMusic(mus_runnin + n - 1, 1);
+    } else {
+      const n = (buf[0] - 0x31) * 9 + (buf[1] - 0x31);
+      if (n > 31) p.message = STSTR_NOMUS;
+      else        S_ChangeMusic(mus_e1m1 + n, 1);
+    }
+  } },
 ];
 
 // Driven by keyboard listener — each lowercase letter advances all sequences.
@@ -91,7 +122,7 @@ export function cht_HandleKey(charCode) {
   if (p === undefined || p === null || p.mo === null) return;
   for (const c of cheats) {
     if (cht_CheckCheat(c.seq, charCode) === 1) {
-      c.apply(p);
+      c.apply(p, c.seq);
       console.log('CHEAT:', p.message);
     }
   }
