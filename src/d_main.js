@@ -10,6 +10,7 @@ import { W_InitMultipleFiles, W_CheckNumForName, W_CacheLumpName, W_CacheLumpNum
 import { M_CheckParm, myargv, myargc } from './m_argv.js';
 import { M_LoadDefaults } from './m_misc.js';
 import { SCREENWIDTH, SCREENHEIGHT, gamestate_t, GameMode_t } from './doomdef.js';
+import { mus_intro, mus_dm2ttl } from './sounds.js';
 import * as doomstat from './doomstat.js';
 import { gamestate, set_gamestate, set_gamemode, set_devparm, set_nomonsters, set_respawnparm, set_fastparm, set_gameepisode, set_gamemap, set_gameskill } from './doomstat.js';
 import { R_InitData, R_TextureNumForName, R_FlatNumForName, R_PrecacheLevel } from './r_data.js';
@@ -83,9 +84,8 @@ function D_DoAdvanceDemo() {
       pagetic = isCommercial ? (35 * 11) : 70;
       set_gamestate(gamestate_t.GS_DEMOSCREEN);
       pagename = 'TITLEPIC';
-      // Title music: mus_dm2ttl for Doom 2, mus_intro for Doom 1.
-      // (S_StartMusic call elided — music IDs come from sounds.js; the audio
-      // wiring is handled when sound init runs.)
+      // d_main.c:476 — title music: mus_dm2ttl for Doom 2, mus_intro for Doom 1.
+      if (_sStartMusic !== null) _sStartMusic(isCommercial ? mus_dm2ttl : mus_intro);
       break;
     case 1: _playDemo('DEMO1'); break;
     case 2:
@@ -96,7 +96,9 @@ function D_DoAdvanceDemo() {
     case 3: _playDemo('DEMO2'); break;
     case 4:
       set_gamestate(gamestate_t.GS_DEMOSCREEN);
-      if (isCommercial) { pagetic = 35 * 11; pagename = 'TITLEPIC'; }
+      // d_main.c:493 — Doom 2 re-shows TITLEPIC with mus_dm2ttl; Doom 1 shows
+      // a credit/help still with no music change.
+      if (isCommercial) { pagetic = 35 * 11; pagename = 'TITLEPIC'; if (_sStartMusic !== null) _sStartMusic(mus_dm2ttl); }
       else              { pagetic = 200;     pagename = isRetail ? 'CREDIT' : 'HELP2'; }
       break;
     case 5: _playDemo('DEMO3'); break;
@@ -247,6 +249,7 @@ let _fwipeStep = null;
 let _gTicker = null;
 let _huTicker = null;
 let _sUpdate = null;
+let _sStartMusic = null;
 let _menuTicker = null;
 let _gReadDemoCmd = null;
 let _wiDrawer  = null;
@@ -284,7 +287,9 @@ async function D_DoomLoop() {
     advancedemo = true;
   });
   _huTicker = (await import('./hu_stuff.js')).HU_Ticker;
-  _sUpdate  = (await import('./s_sound.js')).S_UpdateSounds;
+  const sMod = await import('./s_sound.js');
+  _sUpdate     = sMod.S_UpdateSounds;
+  _sStartMusic = sMod.S_StartMusic;
   const wi = await import('./wi_stuff.js');
   _wiDrawer    = wi.WI_Drawer;
   _wiTicker    = wi.WI_Ticker;
