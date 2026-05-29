@@ -247,6 +247,7 @@ let _fwipeDraw = null;
 let _fwipeActive = null;
 let _fwipeStep = null;
 let _gTicker = null;
+let _gCheckSpecial = null;
 let _huTicker = null;
 let _sUpdate = null;
 let _sStartMusic = null;
@@ -279,6 +280,7 @@ async function D_DoomLoop() {
   _fwipeStep   = fw.wipe_ScreenWipe;
   const gMod = await import('./g_game.js');
   _gTicker      = gMod.G_Ticker;
+  _gCheckSpecial = gMod.G_CheckSpecialButtons;
   _gPlayDemo    = gMod.G_DeferedPlayDemo;
   _gReadDemoCmd = gMod.G_ReadDemoTiccmd;
   gMod.G_SetDemoEndCallback(() => {
@@ -335,6 +337,8 @@ async function D_DoomLoop() {
         } else {
           D_KeyboardInput.buildCmd(p);
         }
+        // g_game.c:697 — process BT_SPECIAL (pause) before P_PlayerThink clears it.
+        if (_gCheckSpecial !== null) _gCheckSpecial(p);
         _pTicker();
         if (_amTicker !== null) _amTicker();
         if (_stTicker !== null) _stTicker();

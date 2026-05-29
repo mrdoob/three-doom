@@ -43,6 +43,8 @@ export function S_Start() {
     if (ch.handle !== 0) I.I_StopSound(ch.handle);
     ch.sfxinfo = null; ch.origin = null; ch.handle = 0;
   }
+  // s_sound.c:214 — clear any held pause before starting the level track.
+  _musPaused = false;
   // s_sound.c:172 — pick the level music. mus enum order in sounds.h
   // matches our _musicNames indexing.
   let mnum;
@@ -248,6 +250,9 @@ let _musicHandle = 0;
 // playing music number (0 = none) so S_ChangeMusic can early-out when the
 // requested track is already playing.
 let _musPlaying = 0;
+// s_sound.c:121 — `static boolean mus_paused`. Guards S_PauseSound/S_ResumeSound
+// so a double-pause (e.g. menu pause + KEY_PAUSE) can't double-toggle the song.
+let _musPaused = false;
 
 export function S_StartMusic(id) { S_ChangeMusic(id, false); }
 export function S_ChangeMusic(musicnum, looping) {
@@ -268,13 +273,26 @@ export function S_ChangeMusic(musicnum, looping) {
 export function S_StopMusic() {
   // s_sound.c:689 — stop + unregister the song and clear mus_playing.
   if (_musPlaying !== 0) {
+    if (_musPaused === true) I.I_ResumeSong(_musicHandle); // s_sound.c:693
     I.I_StopSong(_musicHandle);
     I.I_UnRegisterSong(_musicHandle);
+    _musPaused = false;
     _musPlaying = 0;
   }
 }
-export function S_PauseSound()  { I.I_PauseSong(_musicHandle); }
-export function S_ResumeSound() { I.I_ResumeSong(_musicHandle); }
+// s_sound.c:497 / :506 — pause/resume the playing song during game PAUSE.
+export function S_PauseSound() {
+  if (_musPlaying !== 0 && _musPaused === false) {
+    I.I_PauseSong(_musicHandle);
+    _musPaused = true;
+  }
+}
+export function S_ResumeSound() {
+  if (_musPlaying !== 0 && _musPaused === true) {
+    I.I_ResumeSong(_musicHandle);
+    _musPaused = false;
+  }
+}
 
 // S_UpdateSounds — per-tic. Re-evaluate distance attenuation for each live
 // channel; stop channels whose source is now out of range, push updated

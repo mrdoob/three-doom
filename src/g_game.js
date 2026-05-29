@@ -20,6 +20,7 @@ import { GameMode_t, gamestate_t, skill_t, MAXPLAYERS } from './doomdef.js';
 import { P_Random, M_ClearRandom } from './m_random.js';
 import { states, mobjinfo, S_SARG_RUN1, S_SARG_PAIN2,
          MT_BRUISERSHOT, MT_HEADSHOT, MT_TROOPSHOT } from './info.js';
+import { S_PauseSound, S_ResumeSound } from './s_sound.js';
 
 let _deferred = null; // pending gameaction params
 
@@ -113,6 +114,25 @@ export function G_Ticker() {
   // 35Hz accumulator instead of from here. Vanilla g_game.c:G_Ticker calls
   // them in sequence based on gamestate; the JS architecture routes those
   // through d_main so this function only handles the gameaction queue.
+}
+
+// g_game.c:697 — the "check for special buttons" block from G_Ticker, split
+// out so d_main can run it the instant the ticcmd is built. Vanilla runs it in
+// G_Ticker (before the gamestate switch calls P_Ticker -> P_PlayerThink, which
+// clears BT_SPECIAL at p_user.c:280); our tic loop builds the cmd after
+// G_Ticker, so we invoke this between buildCmd and P_Ticker. Single-player:
+// console player only. BTS_SAVEGAME is a netgame flag — saves go via the menu.
+export function G_CheckSpecialButtons(player) {
+  if (player === null || player === undefined || player.cmd === undefined) return;
+  const cmd = player.cmd;
+  if ((cmd.buttons & 128 /*BT_SPECIAL*/) === 0) return;
+  switch (cmd.buttons & 3 /*BT_SPECIALMASK*/) {
+    case 1 /*BTS_PAUSE*/:
+      doomstat.set_paused(!doomstat.paused);
+      if (doomstat.paused) S_PauseSound();
+      else                 S_ResumeSound();
+      break;
+  }
 }
 
 // Player state transitions.

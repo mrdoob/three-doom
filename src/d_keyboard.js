@@ -5,6 +5,7 @@
 // so cmd is written exactly once per tic (in sync with P_PlayerThink).
 
 import { renderer } from './i_video.js';
+import { BT_SPECIAL, BTS_PAUSE } from './d_event.js';
 
 // Cache cross-module references at module load — keystrokes are a hot path
 // and `await import()` per event adds microtask latency. The dynamic-import
@@ -25,6 +26,9 @@ let turnheld = 0;
 let dclicks = 0;
 let dclickstate = 0;
 let dclicktime = 0;
+// g_game.c:G_Responder — KEY_PAUSE latches sendpause; G_BuildTiccmd (buildCmd)
+// drains it into the next ticcmd as BT_SPECIAL|BTS_PAUSE.
+let sendpause = false;
 
 let _listenersInstalled = false;
 function installListeners() {
@@ -37,10 +41,19 @@ function installListeners() {
       // (e.g. Space scrolling the page) fires first.
       if (e.code === 'Space' || e.code.startsWith('Arrow') ||
           e.code.startsWith('Key') || e.code === 'ShiftLeft' ||
-          e.code === 'ControlLeft' || e.code === 'AltLeft' || e.code === 'Tab') {
+          e.code === 'ControlLeft' || e.code === 'AltLeft' || e.code === 'Tab' ||
+          e.code === 'Pause') {
         e.preventDefault?.();
       }
       const ds = await import('./doomstat.js');
+      // KEY_PAUSE — toggle pause during live (non-demo) gameplay. Latch the
+      // request; buildCmd encodes it into the next ticcmd and G_CheckSpecialButtons
+      // performs the paused/music toggle. Ignored outside a level so it can't
+      // strand sendpause across a demo (which bypasses buildCmd).
+      if (e.code === 'Pause') {
+        if (ds.gamestate === 0 /*GS_LEVEL*/ && ds.demoplayback !== true) sendpause = true;
+        return;
+      }
       // Outside active gameplay (title pages / demo playback), any non-Esc
       // keypress opens the main menu so the user doesn't have to know which
       // key to press. Esc keeps the menu closed in that state.
@@ -205,6 +218,12 @@ export const D_KeyboardInput = {
     } else {
       dclicktime++;
       if (dclicktime > 20) { dclicks = 0; dclickstate = 0; }
+    }
+
+    // g_game.c:430 — a queued pause overrides all other buttons this tic.
+    if (sendpause === true) {
+      sendpause = false;
+      cmd.buttons = BT_SPECIAL | BTS_PAUSE;
     }
   },
 };
