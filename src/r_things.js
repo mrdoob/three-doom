@@ -279,9 +279,19 @@ export function R_UpdateSprites() {
     // Vanilla R_ProjectSprite anchors the sprite top at (mobj.z + topoffset)
     // and draws downwards; bottom edge sits at (mobj.z + topoffset - height).
     // Three.Sprite centres on .position, so we shift down by h/2.
+    let centerY = mo.z / 65536 + t.offsetY - t.h / 2;
+    // Vanilla draws sprites *over* the floor flat, so the few pixels that dip
+    // below the mobj's z (topoffset < height, e.g. BON1's flask base) stay
+    // visible. Our true-3D floor plane is opaque and would occlude them. Clamp
+    // the sprite so its bottom never sinks below the floor it stands on — the
+    // full sprite then rests on the floor instead of being clipped into it.
+    // Floating items (soulsphere, keys) already sit above the floor, so the
+    // clamp leaves them untouched.
+    const floorY = mo.floorz / 65536;
+    if (centerY - t.h / 2 < floorY) centerY = floorY + t.h / 2;
     entry.sprite.position.set(
       mo.x / 65536,
-      mo.z / 65536 + t.offsetY - t.h / 2,
+      centerY,
       -mo.y / 65536,
     );
     // Sector lighting: vanilla r_things.c:R_ProjectSprite picks a colormap row
