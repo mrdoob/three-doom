@@ -173,16 +173,17 @@ function ReleaseVoice(index) {
   voice_free_list[voice_free_num++] = voice;
 }
 
-function LoadOperatorData(operator, data, max_level, volOut) {
+// Returns the combined scale/level register value (C's `*volume` out-param).
+function LoadOperatorData(operator, data, max_level) {
   let level = data.scale;
   if (max_level) level |= 0x3f;
   else           level |= data.level;
-  volOut.v = level;
   writeReg(OPL_REGS_LEVEL + operator, level);
   writeReg(OPL_REGS_TREMOLO + operator, data.tremolo);
   writeReg(OPL_REGS_ATTACK + operator, data.attack);
   writeReg(OPL_REGS_SUSTAIN + operator, data.sustain);
   writeReg(OPL_REGS_WAVEFORM + operator, data.waveform);
+  return level;
 }
 
 function SetVoiceInstrument(voice, instr, instr_voice) {
@@ -192,12 +193,8 @@ function SetVoiceInstrument(voice, instr, instr_voice) {
   const data = instr.voices[instr_voice];
   const modulating = (data.feedback & 0x01) === 0;
   // Doom loads the carrier first, then the modulator.
-  const carVol = { v: voice.car_volume };
-  LoadOperatorData(voice.op2 | voice.array, data.carrier, true, carVol);
-  voice.car_volume = carVol.v;
-  const modVol = { v: voice.mod_volume };
-  LoadOperatorData(voice.op1 | voice.array, data.modulator, !modulating, modVol);
-  voice.mod_volume = modVol.v;
+  voice.car_volume = LoadOperatorData(voice.op2 | voice.array, data.carrier, true);
+  voice.mod_volume = LoadOperatorData(voice.op1 | voice.array, data.modulator, !modulating);
   writeReg((OPL_REGS_FEEDBACK + voice.index) | voice.array, data.feedback | voice.reg_pan);
   voice.priority = 0x0f - (data.carrier.attack >> 4) + 0x0f - (data.carrier.sustain & 0x0f);
 }
@@ -387,24 +384,29 @@ function ControllerEvent(channel_num, controller, param) {
   }
 }
 
+// Reusable scratch for PitchBendEvent's voice re-ordering (C uses fixed stack
+// arrays voice_updated_list[]/voice_not_updated_list[]; reused to avoid
+// allocating on the audio thread for every pitch-wheel event).
+const _pbUpdated = new Array(OPL_NUM_VOICES * 2);
+const _pbNotUpdated = new Array(OPL_NUM_VOICES * 2);
+
 // param2 is the MIDI pitch-wheel MSB (Doom only uses the MSB).
 function PitchBendEvent(channel_num, param2) {
   const channel = channelForNum(channel_num);
   channel.bend = param2 - 64;
   // Re-order voice_alloced_list so updated voices sort after non-updated ones,
   // matching i_oplmusic.c (preserves the voice-stealing order).
-  const updated = [];
-  const notUpdated = [];
+  let u = 0, nu = 0;
   for (let i = 0; i < voice_alloced_num; ++i) {
     if (voice_alloced_list[i].channel === channel) {
       UpdateVoiceFrequency(voice_alloced_list[i]);
-      updated.push(voice_alloced_list[i]);
+      _pbUpdated[u++] = voice_alloced_list[i];
     } else {
-      notUpdated.push(voice_alloced_list[i]);
+      _pbNotUpdated[nu++] = voice_alloced_list[i];
     }
   }
-  for (let i = 0; i < notUpdated.length; i++) voice_alloced_list[i] = notUpdated[i];
-  for (let i = 0; i < updated.length; i++) voice_alloced_list[i + notUpdated.length] = updated[i];
+  for (let i = 0; i < nu; i++) voice_alloced_list[i] = _pbNotUpdated[i];
+  for (let i = 0; i < u; i++) voice_alloced_list[i + nu] = _pbUpdated[i];
 }
 
 function InitChannel(channel) {
@@ -459,31 +461,6 @@ export function OPL_AllVoicesOff() {
 export function OPL_Generate(out, samples) {
   chip.generate(out, samples);
 }
-
-// Test-only accessor: compute FrequencyForVoice for given parameters, used to
-// diff the frequency mapping against the C reference.
-export function __test_FrequencyForVoice(note, bend, baseNoteOffset, isFixed, instrVoice, fineTuning) {
-  const fakeVoice = {
-    note,
-    current_instr_voice: instrVoice,
-    current_instr: {
-      flags: isFixed ? GENMIDI_FLAG_FIXED : 0,
-      fineTuning,
-      voices: [{ baseNoteOffset }, { baseNoteOffset }],
-    },
-    channel: { bend },
-  };
-  return FrequencyForVoice(fakeVoice);
-}
-
-// Event entry points used by the MUS reader.
-export const OPLEvents = {
-  noteOn: KeyOnEvent,
-  noteOff: KeyOffEvent,
-  programChange: ProgramChangeEvent,
-  controller: ControllerEvent,
-  pitchBend: PitchBendEvent,
-};
 
 // ===========================================================================
 // MUS reader / sequencer (Option B)

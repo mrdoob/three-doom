@@ -15,7 +15,7 @@ import { gamestate, set_gamestate, gameaction, set_gameaction, gameepisode, game
          players, playeringame, consoleplayer, gamemode, gametic } from './doomstat.js';
 import { WI_Start } from './wi_stuff.js';
 import { M_ScreenShot } from './m_misc.js';
-import { gameaction_t } from './d_event.js';
+import { gameaction_t, BT_SPECIAL, BT_SPECIALMASK, BTS_PAUSE } from './d_event.js';
 import { GameMode_t, gamestate_t, skill_t, MAXPLAYERS } from './doomdef.js';
 import { P_Random, M_ClearRandom } from './m_random.js';
 import { states, mobjinfo, S_SARG_RUN1, S_SARG_PAIN2,
@@ -125,9 +125,9 @@ export function G_Ticker() {
 export function G_CheckSpecialButtons(player) {
   if (player === null || player === undefined || player.cmd === undefined) return;
   const cmd = player.cmd;
-  if ((cmd.buttons & 128 /*BT_SPECIAL*/) === 0) return;
-  switch (cmd.buttons & 3 /*BT_SPECIALMASK*/) {
-    case 1 /*BTS_PAUSE*/:
+  if ((cmd.buttons & BT_SPECIAL) === 0) return;
+  switch (cmd.buttons & BT_SPECIALMASK) {
+    case BTS_PAUSE:
       doomstat.set_paused(!doomstat.paused);
       if (doomstat.paused) S_PauseSound();
       else                 S_ResumeSound();

@@ -223,35 +223,6 @@ function ensureMusicNode() {
   _musicNode.connect(_musicGain);
 }
 
-// Diagnostics: report the music engine state and measure the music bus output.
-export function I_MusicDebug() {
-  return {
-    ctxState: _ctx ? _ctx.state : 'no-ctx',
-    sampleRate: _ctx ? _ctx.sampleRate : null,
-    oplReady: _oplReady,
-    musicNode: _musicNode !== null,
-    musicGain: _musicGain ? _musicGain.gain.value : null,
-    songPlaying: OPL.I_OPL_SongPlaying(),
-  };
-}
-// Tap the post-gain music bus with an AnalyserNode and report level over `ms`.
-export async function I_MusicProbe(ms = 1500) {
-  if (!_musicGain || !_ctx) return { error: 'no music bus' };
-  if (_ctx.state !== 'running') { try { await _ctx.resume(); } catch (e) {} }
-  const an = _ctx.createAnalyser(); an.fftSize = 2048;
-  _musicGain.connect(an);
-  const buf = new Float32Array(an.fftSize);
-  let peak = 0, ss = 0, n = 0;
-  const steps = Math.max(1, Math.floor(ms / 30));
-  for (let i = 0; i < steps; i++) {
-    an.getFloatTimeDomainData(buf);
-    for (const v of buf) { ss += v * v; n++; if (Math.abs(v) > peak) peak = Math.abs(v); }
-    await new Promise(r => setTimeout(r, 30));
-  }
-  _musicGain.disconnect(an);
-  return { ctxState: _ctx.state, rms: +Math.sqrt(ss / n).toFixed(5), peak: +peak.toFixed(5) };
-}
-
 // Doom drives music volume on the 0..15 menu scale; map it to the bus gain.
 export function I_SetMusicVolume(vol) {
   if (_musicGain === null) return;
