@@ -193,10 +193,23 @@ let   _musicLooping = false;
 
 function midiNoteToFreq(n) { return 440 * Math.pow(2, (n - 69) / 12); }
 
+// Short attack/release ramps. An oscillator whose gain jumps straight to/from
+// zero starts (and ends) mid-waveform — a step discontinuity that clicks. Ramp
+// the gain instead so every note fades in and out smoothly.
+const NOTE_ATTACK  = 0.006; // s
+const NOTE_RELEASE = 0.03;  // s
+
 function _stopNote(channel) {
   const n = _activeNotes.get(channel);
   if (n !== undefined) {
-    try { n.gain.gain.cancelScheduledValues(_musicCtx.currentTime); n.gain.gain.setValueAtTime(0, _musicCtx.currentTime + 0.02); n.osc.stop(_musicCtx.currentTime + 0.05); } catch (_) {}
+    try {
+      const now = _musicCtx.currentTime;
+      const g = n.gain.gain;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);                  // pin the current level
+      g.linearRampToValueAtTime(0, now + NOTE_RELEASE); // fade out, no step
+      n.osc.stop(now + NOTE_RELEASE + 0.01);           // stop after the fade
+    } catch (_) {}
     _activeNotes.delete(channel);
   }
 }
@@ -205,13 +218,17 @@ function _playNote(channel, note, vel) {
   if (_musicCtx === null) return;
   if (canDispatch() !== true) return;
   _stopNote(channel);
+  const now = _musicCtx.currentTime;
   const osc = _musicCtx.createOscillator();
   const gain = _musicCtx.createGain();
   osc.type = channel === 9 ? 'square' : 'triangle'; // percussion channel uses square
   osc.frequency.value = midiNoteToFreq(note);
-  gain.gain.value = (vel / 127) * 0.25; // per-voice level; mix peaks ride the limiter
+  const target = (vel / 127) * 0.25; // per-voice level; mix peaks ride the limiter
+  // Ramp up from silence rather than starting at full gain mid-waveform.
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(target, now + NOTE_ATTACK);
   osc.connect(gain).connect(_musicGain);
-  osc.start();
+  osc.start(now);
   _activeNotes.set(channel, { osc, gain, freq: midiNoteToFreq(note), vel });
 }
 
