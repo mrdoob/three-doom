@@ -4,8 +4,11 @@
 //   E2 → text (E2TEXT) → VICTORY2 still
 //   E3 → text (E3TEXT) → bunny scroller (PFUB1 + PFUB2) → END0..END6 punchline
 
-import { gameepisode } from './doomstat.js';
+import { gameepisode, gamemode } from './doomstat.js';
+import { GameMode_t } from './doomdef.js';
 import { V_DecodePatchToCanvas } from './v_video.js';
+import { S_ChangeMusic, S_StartMusic } from './s_sound.js';
+import { mus_victor, mus_read_m, mus_bunny, mus_evil } from './sounds.js';
 
 // Episode-end text (vanilla d_englsh.h).
 const TEXTS = {
@@ -58,6 +61,12 @@ export function F_StartFinale(onDone) {
   _done = onDone || (() => {});
   _finalecount = 0;
   _stage = 0;
+  // f_finale.c:113 — Doom 1 (shareware/registered/retail) plays mus_victor on
+  // the end-of-episode text screen; commercial/indeterminate use mus_read_m.
+  const isDoom1 = gamemode === GameMode_t.shareware ||
+                  gamemode === GameMode_t.registered ||
+                  gamemode === GameMode_t.retail;
+  S_ChangeMusic(isDoom1 ? mus_victor : mus_read_m, true);
 }
 
 export function F_Responder(ev) {
@@ -81,6 +90,8 @@ export function F_Ticker() {
   if (_stage === 0 && _finalecount > F_TEXTWAIT + text.length * F_TEXTSPEED) {
     _stage = 1;
     _finalecount = 0;
+    // f_finale.c:247 — the E3 bunny scroller gets its own track.
+    if (gameepisode === 3) S_StartMusic(mus_bunny);
   }
 }
 
@@ -185,7 +196,7 @@ const CAST_ORDER = [
 ];
 let _castNum = 0, _castFrame = 0, _castTics = 0, _castActive = false, _castAttacking = false;
 
-export function F_StartCast() { _castActive = true; _castNum = 0; _castFrame = 0; _castTics = 35; _castAttacking = false; }
+export function F_StartCast() { _castActive = true; _castNum = 0; _castFrame = 0; _castTics = 35; _castAttacking = false; S_ChangeMusic(mus_evil, true); /* f_finale.c:388 */ }
 export function F_CastTicker() {
   if (!_castActive) return;
   if (--_castTics > 0) return;
