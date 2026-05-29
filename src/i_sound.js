@@ -27,10 +27,6 @@ function getCtx() {
     // music silent while sfx — on the separate _master bus — kept working).
     _musicGain = _ctx.createGain(); _musicGain.gain.value = MUSIC_TRIM * (8 / 15);
     _musicGain.connect(_ctx.destination);
-    // The autoplay policy starts the context 'suspended'; create the music
-    // ScriptProcessor only once it's actually running (a node created while
-    // suspended can fail to ever fire in Chrome — the cause of "no music").
-    _ctx.onstatechange = () => { if (_ctx.state === 'running') ensureMusicNode(); };
     installResumeOnGesture();
   }
   return _ctx;
@@ -191,36 +187,27 @@ let _oplReady = false;      // OPL engine (chip + GENMIDI) initialised
 let _musicNode = null;      // ScriptProcessorNode pulling OPL audio
 const MUSIC_BUFSIZE = 4096;
 
-// Lazily initialise the OPL engine (chip + GENMIDI). Safe to call repeatedly.
-// By the time a song is registered the WAD (with GENMIDI) and the AudioContext
-// both exist. The audio NODE is created separately (ensureMusicNode), only once
-// the context is running.
+// Lazily initialise the OPL engine (chip + GENMIDI) and its audio node. Safe to
+// call repeatedly. By the time a song is registered the WAD (with GENMIDI) and
+// the AudioContext both exist. The node may be created while the context is
+// still autoplay-suspended; it begins firing once a user gesture resumes the
+// context (installResumeOnGesture).
 function ensureOpl() {
-  if (!_oplReady) {
-    const ctx = getCtx();
-    OPL.OPL_InitMusic(ctx.sampleRate);
-    const lumpnum = W_CheckNumForName('GENMIDI');
-    if (lumpnum === -1) return; // no instrument bank -> no music (no fallback)
-    OPL.OPL_LoadGenmidi(W_CacheLumpNum(lumpnum, 0));
-    _oplReady = true;
-  }
-  ensureMusicNode();
-}
-
-// Create the music ScriptProcessor — but ONLY when the AudioContext is running.
-// A node created while the context is suspended can silently never fire in
-// Chrome, so if we're still suspended we wait: the onstatechange handler in
-// getCtx calls this again once the context resumes.
-function ensureMusicNode() {
-  if (!_oplReady || _musicNode !== null) return;
+  if (_oplReady) return;
   const ctx = getCtx();
-  if (ctx.state !== 'running') return; // created later, on resume
+  OPL.OPL_InitMusic(ctx.sampleRate);
+  const lumpnum = W_CheckNumForName('GENMIDI');
+  if (lumpnum === -1) return; // no instrument bank -> no music (no fallback)
+  OPL.OPL_LoadGenmidi(W_CacheLumpNum(lumpnum, 0));
+  // ScriptProcessor renders the OPL chip on the main thread, feeding the music
+  // bus. (1,1) channels; only the output is connected.
   _musicNode = ctx.createScriptProcessor(MUSIC_BUFSIZE, 1, 1);
   _musicNode.onaudioprocess = (e) => {
     const out = e.outputBuffer.getChannelData(0);
     OPL.I_OPL_FillBuffer(out, out.length);
   };
   _musicNode.connect(_musicGain);
+  _oplReady = true;
 }
 
 // Doom drives music volume on the 0..15 menu scale; map it to the bus gain.
