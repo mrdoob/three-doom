@@ -24,8 +24,26 @@ function getCtx() {
     // that feeds this gain. The chip output is pre-tuned to sit below clipping,
     // so no limiter is needed; _musicGain is the volume control.
     _musicGain = _ctx.createGain(); _musicGain.gain.value = MUSIC_TRIM * (8 / 15);
+    // The autoplay policy starts the context 'suspended'; create the music
+    // ScriptProcessor only once it's actually running (a node created while
+    // suspended can fail to ever fire in Chrome — the cause of "no music").
+    _ctx.onstatechange = () => { if (_ctx.state === 'running') ensureMusicNode(); };
+    installResumeOnGesture();
   }
   return _ctx;
+}
+
+// Explicitly resume the AudioContext on the first user gesture. Don't rely on
+// Chrome silently auto-resuming — it doesn't always, and a suspended context
+// means total silence.
+let _resumeInstalled = false;
+function installResumeOnGesture() {
+  if (_resumeInstalled || typeof window === 'undefined') return;
+  _resumeInstalled = true;
+  const resume = () => { if (_ctx !== null && _ctx.state !== 'running') _ctx.resume().catch(() => {}); };
+  for (const ev of ['pointerdown', 'mousedown', 'keydown', 'touchstart']) {
+    window.addEventListener(ev, resume, { passive: true });
+  }
 }
 
 // The browser blocks AudioContext from playing until the user interacts with
@@ -166,29 +184,69 @@ export function I_UpdateSoundParams(handle, vol, sep, pitch) {
 // Trim so the (pre-tuned) OPL output sits a touch below the sfx bus.
 const MUSIC_TRIM = 0.8;
 
-let _oplReady = false;
-let _musicNode = null;     // ScriptProcessorNode pulling OPL audio
+let _oplReady = false;      // OPL engine (chip + GENMIDI) initialised
+let _musicNode = null;      // ScriptProcessorNode pulling OPL audio
 const MUSIC_BUFSIZE = 4096;
 
-// Lazily initialise the OPL engine + audio node. Safe to call repeatedly.
+// Lazily initialise the OPL engine (chip + GENMIDI). Safe to call repeatedly.
 // By the time a song is registered the WAD (with GENMIDI) and the AudioContext
-// both exist.
+// both exist. The audio NODE is created separately (ensureMusicNode), only once
+// the context is running.
 function ensureOpl() {
-  if (_oplReady) return;
+  if (!_oplReady) {
+    const ctx = getCtx();
+    OPL.OPL_InitMusic(ctx.sampleRate);
+    const lumpnum = W_CheckNumForName('GENMIDI');
+    if (lumpnum === -1) return; // no instrument bank -> no music (no fallback)
+    OPL.OPL_LoadGenmidi(W_CacheLumpNum(lumpnum, 0));
+    _oplReady = true;
+  }
+  ensureMusicNode();
+}
+
+// Create the music ScriptProcessor — but ONLY when the AudioContext is running.
+// A node created while the context is suspended can silently never fire in
+// Chrome, so if we're still suspended we wait: the onstatechange handler in
+// getCtx calls this again once the context resumes.
+function ensureMusicNode() {
+  if (!_oplReady || _musicNode !== null) return;
   const ctx = getCtx();
-  OPL.OPL_InitMusic(ctx.sampleRate);
-  const lumpnum = W_CheckNumForName('GENMIDI');
-  if (lumpnum === -1) return; // no instrument bank -> no music (no fallback)
-  OPL.OPL_LoadGenmidi(W_CacheLumpNum(lumpnum, 0));
-  // ScriptProcessor renders the OPL chip on the main thread. (1,1) channels for
-  // broad firing compatibility; only the output is used/connected.
+  if (ctx.state !== 'running') return; // created later, on resume
   _musicNode = ctx.createScriptProcessor(MUSIC_BUFSIZE, 1, 1);
   _musicNode.onaudioprocess = (e) => {
     const out = e.outputBuffer.getChannelData(0);
     OPL.I_OPL_FillBuffer(out, out.length);
   };
   _musicNode.connect(_musicGain);
-  _oplReady = true;
+}
+
+// Diagnostics: report the music engine state and measure the music bus output.
+export function I_MusicDebug() {
+  return {
+    ctxState: _ctx ? _ctx.state : 'no-ctx',
+    sampleRate: _ctx ? _ctx.sampleRate : null,
+    oplReady: _oplReady,
+    musicNode: _musicNode !== null,
+    musicGain: _musicGain ? _musicGain.gain.value : null,
+    songPlaying: OPL.I_OPL_SongPlaying(),
+  };
+}
+// Tap the post-gain music bus with an AnalyserNode and report level over `ms`.
+export async function I_MusicProbe(ms = 1500) {
+  if (!_musicGain || !_ctx) return { error: 'no music bus' };
+  if (_ctx.state !== 'running') { try { await _ctx.resume(); } catch (e) {} }
+  const an = _ctx.createAnalyser(); an.fftSize = 2048;
+  _musicGain.connect(an);
+  const buf = new Float32Array(an.fftSize);
+  let peak = 0, ss = 0, n = 0;
+  const steps = Math.max(1, Math.floor(ms / 30));
+  for (let i = 0; i < steps; i++) {
+    an.getFloatTimeDomainData(buf);
+    for (const v of buf) { ss += v * v; n++; if (Math.abs(v) > peak) peak = Math.abs(v); }
+    await new Promise(r => setTimeout(r, 30));
+  }
+  _musicGain.disconnect(an);
+  return { ctxState: _ctx.state, rms: +Math.sqrt(ss / n).toFixed(5), peak: +peak.toFixed(5) };
 }
 
 // Doom drives music volume on the 0..15 menu scale; map it to the bus gain.
