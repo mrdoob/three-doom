@@ -236,20 +236,35 @@ const _musicNames = [
   'INTER','INTRO','BUNNY','VICTOR','INTROA',
 ];
 let _musicHandle = 0;
+// s_sound.c:124 — `static musicinfo_t* mus_playing`. We track the currently
+// playing music number (0 = none) so S_ChangeMusic can early-out when the
+// requested track is already playing.
+let _musPlaying = 0;
 
 export function S_StartMusic(id) { S_ChangeMusic(id, false); }
 export function S_ChangeMusic(musicnum, looping) {
   if (musicnum <= 0 || musicnum >= _musicNames.length) return;
+  // s_sound.c:665 — `if (mus_playing == music) return;`. Re-requesting the
+  // track that's already playing leaves it running instead of restarting it.
+  if (_musPlaying === musicnum) return;
+  // s_sound.c:669 — shutdown the old music before loading the new lump.
+  S_StopMusic();
   const name = 'D_' + _musicNames[musicnum];
   const lumpnum = W_CheckNumForName(name);
   if (lumpnum === -1) return;
   const bytes = W_CacheLumpNum(lumpnum, 0);
-  I.I_StopSong(_musicHandle);
-  I.I_UnRegisterSong(_musicHandle);
   _musicHandle = I.I_RegisterSong(bytes);
   I.I_PlaySong(_musicHandle, !!looping);
+  _musPlaying = musicnum;
 }
-export function S_StopMusic()   { I.I_StopSong(_musicHandle); }
+export function S_StopMusic() {
+  // s_sound.c:689 — stop + unregister the song and clear mus_playing.
+  if (_musPlaying !== 0) {
+    I.I_StopSong(_musicHandle);
+    I.I_UnRegisterSong(_musicHandle);
+    _musPlaying = 0;
+  }
+}
 export function S_PauseSound()  { I.I_PauseSong(_musicHandle); }
 export function S_ResumeSound() { I.I_ResumeSong(_musicHandle); }
 
