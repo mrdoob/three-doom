@@ -9,6 +9,7 @@
 // Followed by raw unsigned 8-bit PCM samples.
 
 import { W_CacheLumpNum, W_GetNumForName, W_CheckNumForName } from './w_wad.js';
+import * as OPL from './i_oplmusic.js';
 
 let _ctx = null;        // AudioContext
 let _master = null;     // master GainNode (sfx volume)
@@ -19,17 +20,10 @@ function getCtx() {
   if (_ctx === null) {
     _ctx = new (window.AudioContext || window.webkitAudioContext)();
     _master    = _ctx.createGain(); _master.gain.value = 1.0; _master.connect(_ctx.destination);
-    // Music bus: gain -> limiter -> destination. The limiter (hard-knee
-    // compressor) tames peaks when several oscillator voices sound at once, so
-    // each note can play at an audible level without the summed mix clipping.
-    _musicGain = _ctx.createGain(); _musicGain.gain.value = 8 / 15; // overwritten by I_SetMusicVolume
-    const musicLimiter = _ctx.createDynamicsCompressor();
-    musicLimiter.threshold.value = -3;
-    musicLimiter.knee.value = 0;
-    musicLimiter.ratio.value = 20;
-    musicLimiter.attack.value = 0.003;
-    musicLimiter.release.value = 0.25;
-    _musicGain.connect(musicLimiter).connect(_ctx.destination);
+    // Music bus: the OPL engine (i_oplmusic.js) renders into a ScriptProcessor
+    // that feeds this gain. The chip output is pre-tuned to sit below clipping,
+    // so no limiter is needed; _musicGain is the volume control.
+    _musicGain = _ctx.createGain(); _musicGain.gain.value = MUSIC_TRIM * (8 / 15);
   }
   return _ctx;
 }
@@ -105,16 +99,15 @@ export function I_SetChannels() {}
 // value (s_sound reads snd_SfxVolume directly).
 export function I_SetSfxVolume(_vol) {}
 
-// i_sound.c:I_QrySongPlaying — DMX returned the playing music handle or 0.
+// i_sound.c:I_QrySongPlaying — true while a song is playing.
 export function I_QrySongPlaying(_handle) {
-  return _musicScore !== null;
+  return OPL.I_OPL_SongPlaying();
 }
 
-// i_sound.c init/shutdown for the music subsystem. Web Audio doesn't need
-// separate music init.
-export function I_InitMusic() {}
+// i_sound.c init/shutdown for the music subsystem.
+export function I_InitMusic() { ensureOpl(); }
 export function I_ShutdownMusic() {
-  if (_musicTimer !== null) { clearInterval(_musicTimer); _musicTimer = null; }
+  OPL.I_OPL_StopSong();
 }
 
 // `id` is sfx_xxx index into _sfxInfo. vol 0..127, sep 0..255 (stereo), pitch
@@ -163,160 +156,61 @@ export function I_UpdateSoundParams(handle, vol, sep, pitch) {
   if (entry.src && pitch > 0) entry.src.playbackRate.value = pitch / 128;
 }
 
-// ---------- Music ----------
-// MUS lump format (Doom's compressed MIDI variant):
-//   header[0..4]   = "MUS\x1a"
-//   header[4..6]   = scoreLen
-//   header[6..8]   = scoreStart
-//   header[8..10]  = numChannels
-//   header[10..12] = numSecondaryChannels
-//   header[12..14] = numInstrumentPatches
-// Followed by `numInstrumentPatches` 2-byte instrument indices, then
-// `scoreLen` bytes of events.
-//
-// Events: each byte =  (last<<7) | (event_type<<4) | channel
-//   event types: 0 release, 1 play, 2 pitch, 3 sys, 4 ctlr, 6 end, 5/7 unused
-//
-// For the browser port we synthesize each playing note as a soft sine using
-// Web Audio's OscillatorNode + GainNode. It's a far cry from the OPL2/MIDI
-// fidelity of vanilla Doom but conveys the melody.
+// ---------- Music (OPL2 FM synthesis via DBOPL + GENMIDI) ----------
+// Doom's music is MUS data played through the OPL2 chip using the GENMIDI
+// instrument bank — that gritty AdLib/Sound Blaster sound. The full engine
+// lives in i_oplmusic.js (DBOPL chip + GENMIDI + a MUS sequencer); here we
+// just feed it into Web Audio through a ScriptProcessorNode on the music bus
+// and map Doom's music-volume slider to the bus gain.
 
-let _musicCtx = null;
-const _activeNotes = new Map();   // channel -> { osc, gain, freq, vel }
-let   _musicPos = 0;
-let   _musicScore = null;
-let   _musicScoreStart = 0;
-let   _musicScoreEnd   = 0;
-let   _musicWaiting = 0;
-let   _musicTimer = null;
-let   _musicLooping = false;
+// Trim so the (pre-tuned) OPL output sits a touch below the sfx bus.
+const MUSIC_TRIM = 0.8;
 
-function midiNoteToFreq(n) { return 440 * Math.pow(2, (n - 69) / 12); }
+let _oplReady = false;
+let _musicNode = null;     // ScriptProcessorNode pulling OPL audio
+const MUSIC_BUFSIZE = 4096;
 
-// Short attack/release ramps. An oscillator whose gain jumps straight to/from
-// zero starts (and ends) mid-waveform — a step discontinuity that clicks. Ramp
-// the gain instead so every note fades in and out smoothly.
-const NOTE_ATTACK  = 0.006; // s
-const NOTE_RELEASE = 0.03;  // s
-
-function _stopNote(channel) {
-  const n = _activeNotes.get(channel);
-  if (n !== undefined) {
-    try {
-      const now = _musicCtx.currentTime;
-      const g = n.gain.gain;
-      g.cancelScheduledValues(now);
-      g.setValueAtTime(g.value, now);                  // pin the current level
-      g.linearRampToValueAtTime(0, now + NOTE_RELEASE); // fade out, no step
-      n.osc.stop(now + NOTE_RELEASE + 0.01);           // stop after the fade
-    } catch (_) {}
-    _activeNotes.delete(channel);
-  }
+// Lazily initialise the OPL engine + audio node. Safe to call repeatedly.
+// By the time a song is registered the WAD (with GENMIDI) and the AudioContext
+// both exist.
+function ensureOpl() {
+  if (_oplReady) return;
+  const ctx = getCtx();
+  OPL.OPL_InitMusic(ctx.sampleRate);
+  const lumpnum = W_CheckNumForName('GENMIDI');
+  if (lumpnum === -1) return; // no instrument bank -> no music (no fallback)
+  OPL.OPL_LoadGenmidi(W_CacheLumpNum(lumpnum, 0));
+  // ScriptProcessor renders the OPL chip on the main thread. (1,1) channels for
+  // broad firing compatibility; only the output is used/connected.
+  _musicNode = ctx.createScriptProcessor(MUSIC_BUFSIZE, 1, 1);
+  _musicNode.onaudioprocess = (e) => {
+    const out = e.outputBuffer.getChannelData(0);
+    OPL.I_OPL_FillBuffer(out, out.length);
+  };
+  _musicNode.connect(_musicGain);
+  _oplReady = true;
 }
 
-function _playNote(channel, note, vel) {
-  if (_musicCtx === null) return;
-  if (canDispatch() !== true) return;
-  _stopNote(channel);
-  const now = _musicCtx.currentTime;
-  const osc = _musicCtx.createOscillator();
-  const gain = _musicCtx.createGain();
-  osc.type = channel === 9 ? 'square' : 'triangle'; // percussion channel uses square
-  osc.frequency.value = midiNoteToFreq(note);
-  const target = (vel / 127) * 0.25; // per-voice level; mix peaks ride the limiter
-  // Ramp up from silence rather than starting at full gain mid-waveform.
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(target, now + NOTE_ATTACK);
-  osc.connect(gain).connect(_musicGain);
-  osc.start(now);
-  _activeNotes.set(channel, { osc, gain, freq: midiNoteToFreq(note), vel });
-}
-
-function _processOneEvent() {
-  if (_musicScore === null) return false;
-  if (_musicPos >= _musicScoreEnd) {
-    if (_musicLooping) { _musicPos = _musicScoreStart; }
-    else return false;
-  }
-  const eb = _musicScore[_musicPos++];
-  const last = (eb & 0x80) !== 0;
-  const type = (eb >> 4) & 7;
-  const channel = eb & 0x0F;
-  if (type === 0) { // release note
-    _musicPos++; // note number byte
-    _stopNote(channel);
-  } else if (type === 1) { // play note
-    let note = _musicScore[_musicPos++];
-    let vel = 100;
-    if (note & 0x80) { note &= 0x7F; vel = _musicScore[_musicPos++] & 0x7F; }
-    _playNote(channel, note, vel);
-  } else if (type === 2) { // pitch bend (one byte)
-    _musicPos++;
-  } else if (type === 3) { // system event (one byte)
-    _musicPos++;
-  } else if (type === 4) { // controller (two bytes)
-    _musicPos += 2;
-  } else if (type === 6) { // end of score
-    if (_musicLooping) _musicPos = _musicScoreStart;
-    else return false;
-  }
-  if (last) {
-    // Read variable-length delay.
-    let delay = 0, b;
-    do { b = _musicScore[_musicPos++]; delay = (delay << 7) | (b & 0x7F); } while (b & 0x80);
-    _musicWaiting = delay;
-  }
-  return true;
-}
-
-function _musicTick() {
-  if (_musicCtx === null || _musicScore === null) return;
-  // Don't advance the score while the AudioContext is still suspended —
-  // we'd silently chew through the intro and jump in mid-bar once it resumes.
-  if (canDispatch() !== true) return;
-  if (_musicWaiting > 0) { _musicWaiting--; return; }
-  for (let safety = 0; safety < 64; safety++) {
-    if (!_processOneEvent()) return;
-    if (_musicWaiting > 0) return;
-  }
-}
-
-// The menu drives music volume on Doom's 0..15 scale (m_menu.js), NOT 0..127 —
-// map it to the full 0..1 gain range. (The previous code divided by 127, so the
-// default volume of 8 came out at ~6% and an extra 0.4 headroom on top of the
-// per-note attenuation made music all but inaudible. The music bus limiter now
-// handles peak control, so no headroom factor is needed here.)
+// Doom drives music volume on the 0..15 menu scale; map it to the bus gain.
 export function I_SetMusicVolume(vol) {
   if (_musicGain === null) return;
   if (vol < 0) vol = 0; if (vol > 15) vol = 15;
-  _musicGain.gain.value = vol / 15;
+  _musicGain.gain.value = MUSIC_TRIM * (vol / 15);
 }
-export function I_PauseSong(_handle)  { if (_musicTimer !== null) { clearInterval(_musicTimer); _musicTimer = null; } }
-export function I_ResumeSong(_handle) { if (_musicTimer === null && _musicScore !== null) _musicTimer = setInterval(_musicTick, 1000 / 140); }
+export function I_PauseSong(_handle)  { OPL.I_OPL_PauseSong(); }
+export function I_ResumeSong(_handle) { OPL.I_OPL_ResumeSong(); }
 export function I_PlaySong(_handle, looping) {
-  _musicLooping = !!looping;
-  _musicPos = _musicScoreStart;
-  _musicWaiting = 0;
-  for (const ch of Array.from(_activeNotes.keys())) _stopNote(ch);
-  I_ResumeSong(_handle);
+  ensureOpl();
+  OPL.I_OPL_PlaySong(!!looping);
 }
-export function I_StopSong(_handle)   {
-  I_PauseSong(_handle);
-  for (const ch of Array.from(_activeNotes.keys())) _stopNote(ch);
-}
-export function I_UnRegisterSong(_handle) { _musicScore = null; }
+export function I_StopSong(_handle)   { OPL.I_OPL_StopSong(); }
+export function I_UnRegisterSong(_handle) { OPL.I_OPL_StopSong(); }
 
-// Decode a D_xxx MUS lump and store its score for playback.
+// Register a D_xxx MUS lump for playback.
 export function I_RegisterSong(bytes) {
   if (bytes === null || bytes === undefined || bytes.length < 16) return 0;
   if (bytes[0] !== 0x4D || bytes[1] !== 0x55 || bytes[2] !== 0x53 || bytes[3] !== 0x1A) return 0;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const scoreLen   = view.getUint16(4, true);
-  const scoreStart = view.getUint16(6, true);
-  _musicScore = bytes;
-  _musicScoreStart = scoreStart;
-  _musicScoreEnd   = scoreStart + scoreLen;
-  _musicPos = scoreStart;
-  _musicCtx = _ctx; // (created on demand by getCtx())
+  ensureOpl();
+  OPL.I_OPL_RegisterSong(bytes);
   return 1;
 }
