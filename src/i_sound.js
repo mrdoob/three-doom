@@ -22,8 +22,11 @@ function getCtx() {
     _master    = _ctx.createGain(); _master.gain.value = 1.0; _master.connect(_ctx.destination);
     // Music bus: the OPL engine (i_oplmusic.js) renders into a ScriptProcessor
     // that feeds this gain. The chip output is pre-tuned to sit below clipping,
-    // so no limiter is needed; _musicGain is the volume control.
+    // so no limiter is needed; _musicGain is the volume control. MUST connect to
+    // the destination (this was dropped when the limiter was removed, which made
+    // music silent while sfx — on the separate _master bus — kept working).
     _musicGain = _ctx.createGain(); _musicGain.gain.value = MUSIC_TRIM * (8 / 15);
+    _musicGain.connect(_ctx.destination);
     // The autoplay policy starts the context 'suspended'; create the music
     // ScriptProcessor only once it's actually running (a node created while
     // suspended can fail to ever fire in Chrome — the cause of "no music").
