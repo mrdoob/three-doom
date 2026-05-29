@@ -14,7 +14,7 @@ import { menuactive, set_menuactive, gamestate, gamemode, demoplayback } from '.
 import { GameMode_t, KEY_UPARROW, KEY_DOWNARROW, KEY_LEFTARROW, KEY_RIGHTARROW,
   KEY_BACKSPACE, KEY_ESCAPE, KEY_ENTER } from './doomdef.js';
 import { G_DeferedInitNew, G_LoadGame, G_SaveGame } from './g_game.js';
-import { HU_ToggleMessages } from './hu_stuff.js';
+import { HU_ToggleMessages, showMessages } from './hu_stuff.js';
 import { D_AcquirePointerLock } from './d_keyboard.js';
 import { V_DecodePatchToCanvas, V_DrawPatchAtCanvas, V_RegisterPNGPatch } from './v_video.js';
 const getPatch = V_DecodePatchToCanvas;
@@ -28,6 +28,9 @@ V_RegisterPNGPatch('M_CONT', './M_CONT.png');
 let _currentMenu = null;
 let _selected    = 0;
 let _menuStack   = [];
+
+// m_menu.c:129 — LINEHEIGHT.
+const LINE_HEIGHT = 16;
 
 // Skull cursor — 2 frames, alternates each 8 tics.
 const SKULL_NAMES = ['M_SKULL1', 'M_SKULL2'];
@@ -94,19 +97,48 @@ const SKILL_MENU = { name: 'Skill', x: 48, y: 63, items: [
   { patch: 'M_NMARE', label: 'Nightmare!',             action: () => _chooseSkill(4) },
 ]};
 
+// m_menu.c:339-372 — OptionsMenu has 8 entries: the two `status:-1` spacer
+// rows (option_empty1/2) reserve the lines on which M_DrawOptions draws the
+// screen-size and mouse-sensitivity thermos (one line BELOW each slider's
+// label). The faithful indicators/title/thermos are painted by `draw` below.
 const OPTIONS_MENU = { name: 'Options', x: 60, y: 37, items: [
   { patch: 'M_ENDGAM', label: 'End Game',          action: () => M_EndGame() },
   { patch: 'M_MESSG',  label: 'Messages',          action: () => HU_ToggleMessages() },
   { patch: 'M_DETAIL', label: 'Graphic Detail',    action: () => { _detailLevel ^= 1; } },
   { patch: 'M_SCRNSZ', label: 'Screen Size',       slider: true, get: () => _screenSize, set: (v) => M_SizeDisplay(v > _screenSize ? 1 : 0) },
+  { spacer: true },
   { patch: 'M_MSENS',  label: 'Mouse Sensitivity', slider: true, get: () => _mouseSens,  set: (v) => { _mouseSens  = Math.max(0, Math.min(9, v)); } },
+  { spacer: true },
   { patch: 'M_SVOL',   label: 'Sound Volume',      action: () => pushMenu(SOUND_MENU) },
 ]};
+// m_menu.c:951-966 M_DrawOptions — title, on/off + hi/lo indicators, thermos.
+OPTIONS_MENU.draw = (ctx, lx, ly, sx, sy) => {
+  const x = OPTIONS_MENU.x, y = OPTIONS_MENU.y, LH = LINE_HEIGHT;
+  _drawPatchDoom(ctx, 'M_OPTTTL', 108, 15, lx, ly, sx, sy);
+  // detailNames[detailLevel] (0=high,1=low) on the detail row (idx 2).
+  _drawPatchDoom(ctx, _detailLevel === 0 ? 'M_GDHIGH' : 'M_GDLOW', x + 175, y + LH * 2, lx, ly, sx, sy);
+  // msgNames[showMessages] (0=off,1=on) on the messages row (idx 1).
+  _drawPatchDoom(ctx, showMessages === true ? 'M_MSGON' : 'M_MSGOFF', x + 120, y + LH * 1, lx, ly, sx, sy);
+  // Thermos on the spacer rows: mousesens+1 (idx 6), scrnsize+1 (idx 4).
+  M_DrawThermo(ctx, x, y + LH * 6, 10, _mouseSens,  lx, ly, sx, sy);
+  M_DrawThermo(ctx, x, y + LH * 4,  9, _screenSize, lx, ly, sx, sy);
+};
 
+// m_menu.c:422-447 — SoundMenu also has spacer rows (sfx_empty1/2) holding the
+// volume thermos (one line below each label).
 const SOUND_MENU = { name: 'Sound', x: 80, y: 64, items: [
   { patch: 'M_SFXVOL', label: 'Sfx Volume',   slider: true, get: () => sfxVolume,   set: (v) => { sfxVolume   = Math.max(0, Math.min(15, v)); _notifyVolume(); } },
+  { spacer: true },
   { patch: 'M_MUSVOL', label: 'Music Volume', slider: true, get: () => musicVolume, set: (v) => { musicVolume = Math.max(0, Math.min(15, v)); _notifyVolume(); } },
+  { spacer: true },
 ]};
+// m_menu.c:800-809 M_DrawSound — title + sfx/music thermos (width 16).
+SOUND_MENU.draw = (ctx, lx, ly, sx, sy) => {
+  const x = SOUND_MENU.x, y = SOUND_MENU.y, LH = LINE_HEIGHT;
+  _drawPatchDoom(ctx, 'M_SVOL', 60, 38, lx, ly, sx, sy);
+  M_DrawThermo(ctx, x, y + LH * 1, 16, sfxVolume,   lx, ly, sx, sy);  // sfx_vol+1
+  M_DrawThermo(ctx, x, y + LH * 3, 16, musicVolume, lx, ly, sx, sy);  // music_vol+1
+};
 
 // Slot items use a getter for `label` so the displayed text tracks
 // _saveStrings as it changes (e.g. after a save) instead of capturing the
@@ -145,6 +177,11 @@ export function M_StopMessage() { _message = null; }
 // ---------- Navigation ----------
 function pushMenu(m) { _menuStack.push(_currentMenu); _currentMenu = m; _selected = 0; }
 function popMenu()   { _currentMenu = _menuStack.pop() || MAIN_MENU; _selected = 0; }
+// m_menu.c:1624-1642 — move the cursor by `delta`, skipping spacer rows (status:-1).
+function _moveCursor(m, delta) {
+  const n = m.items.length;
+  do { _selected = (_selected + delta + n) % n; } while (m.items[_selected].spacer === true);
+}
 
 function _chooseEpisode(ep) {
   if (gamemode === GameMode_t.shareware && ep > 1) {
@@ -261,8 +298,8 @@ export function M_Responder(ev) {
   if (menuactive !== true) return false;
   const m = _currentMenu;
   if (m === null) return false;
-  if (key === KEY_UPARROW)    { _selected = (_selected - 1 + m.items.length) % m.items.length; return true; }
-  if (key === KEY_DOWNARROW)  { _selected = (_selected + 1) % m.items.length; return true; }
+  if (key === KEY_UPARROW)    { _moveCursor(m, -1); return true; }
+  if (key === KEY_DOWNARROW)  { _moveCursor(m,  1); return true; }
   if (key === KEY_LEFTARROW)  {
     const it = m.items[_selected];
     if (it.slider === true) it.set(it.get() - 1);
@@ -275,7 +312,9 @@ export function M_Responder(ev) {
   }
   if (key === KEY_ENTER) {
     const it = m.items[_selected];
-    if (it.action != null) it.action();
+    // m_menu.c:1667 — ENTER on a slider (status==2) acts as the right arrow.
+    if (it.slider === true) it.set(it.get() + 1);
+    else if (it.action != null) it.action();
     return true;
   }
   // doomdef.h:KEY_BACKSPACE = 127. The previous port used 0x08 (ASCII BS),
@@ -287,6 +326,31 @@ export function M_Responder(ev) {
 
 // ---------- Drawer ----------
 const drawPatchAt = V_DrawPatchAtCanvas;
+
+// Draw a WAD patch positioned in Doom (320x200) coords (dx,dy), mapped into the
+// letterboxed menu box at origin (lx,ly) and scale (sx,sy). Mirrors
+// V_DrawPatchDirect used throughout m_menu.c's draw routines.
+function _drawPatchDoom(ctx, name, dx, dy, lx, ly, sx, sy) {
+  const p = getPatch(name);
+  if (p !== null) drawPatchAt(ctx, p, lx + dx * sx, ly + dy * sy, sx, sy);
+}
+
+// m_menu.c:1182 M_DrawThermo — left cap, `thermWidth` middle cells, right cap,
+// then the slider knob (M_THERMO) at cell `thermDot`.
+function M_DrawThermo(ctx, x, y, thermWidth, thermDot, lx, ly, sx, sy) {
+  let xx = x;
+  _drawPatchDoom(ctx, 'M_THERML', xx, y, lx, ly, sx, sy);
+  xx += 8;
+  // The middle cell is the same patch every iteration — resolve it once
+  // (drawPatchAt no-ops on null, so no per-cell null check needed).
+  const mid = getPatch('M_THERMM');
+  for (let i = 0; i < thermWidth; i++) {
+    drawPatchAt(ctx, mid, lx + xx * sx, ly + y * sy, sx, sy);
+    xx += 8;
+  }
+  _drawPatchDoom(ctx, 'M_THERMR', xx, y, lx, ly, sx, sy);
+  _drawPatchDoom(ctx, 'M_THERMO', (x + 8) + thermDot * 8, y, lx, ly, sx, sy);
+}
 
 export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
   if (!menuactive) {
@@ -317,11 +381,15 @@ export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
     const title = getPatch(m.patch);
     if (title !== null) drawPatchAt(overlayCtx, title, lx + 94 * sx, ly + 2 * sy, sx, sy);
   }
+  // m_menu.c:1784 — per-menu draw routine (title, indicators, thermos) runs
+  // before the item labels, exactly like currentMenu->routine() in M_Drawer.
+  if (typeof m.draw === 'function') m.draw(overlayCtx, lx, ly, sx, sy);
   // Items.
   const baseX = m.x, baseY = m.y;
-  const LINE_HEIGHT = 16;
   for (let i = 0; i < m.items.length; i++) {
     const it = m.items[i];
+    // Spacer rows (m_menu.c status:-1) reserve a line for a thermo; no label.
+    if (it.spacer === true) continue;
     const ix = lx + baseX * sx;
     const iy = ly + (baseY + i * LINE_HEIGHT) * sy;
     // Patch if available; otherwise fall back to the text label. The fallback
@@ -330,21 +398,11 @@ export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
     const p = it.patch ? getPatch(it.patch) : null;
     if (p !== null) {
       drawPatchAt(overlayCtx, p, ix, iy, sx, sy);
-    } else {
+    } else if (it.label) {
       overlayCtx.fillStyle = '#cccccc';
       overlayCtx.font = `bold ${Math.round(12 * sy)}px monospace`;
       overlayCtx.textAlign = 'left';
       overlayCtx.fillText(it.label, ix, iy + 12 * sy);
-    }
-    if (it.slider) {
-      const sliderX = ix + 100 * sx;
-      const v = it.get();
-      const vMax = it.label === 'Mouse Sensitivity' ? 9 : (it.label === 'Screen Size' ? 11 : 15);
-      // Slider: '<' '*'*16 '>'
-      overlayCtx.fillStyle = '#888';
-      overlayCtx.fillRect(sliderX, iy + 6 * sy, vMax * 8 * sx, 4 * sy);
-      overlayCtx.fillStyle = '#ff8';
-      overlayCtx.fillRect(sliderX, iy + 6 * sy, v * 8 * sx, 4 * sy);
     }
   }
   // Skull cursor next to the selected item.
