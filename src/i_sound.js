@@ -19,7 +19,17 @@ function getCtx() {
   if (_ctx === null) {
     _ctx = new (window.AudioContext || window.webkitAudioContext)();
     _master    = _ctx.createGain(); _master.gain.value = 1.0; _master.connect(_ctx.destination);
-    _musicGain = _ctx.createGain(); _musicGain.gain.value = 0.5; _musicGain.connect(_ctx.destination);
+    // Music bus: gain -> limiter -> destination. The limiter (hard-knee
+    // compressor) tames peaks when several oscillator voices sound at once, so
+    // each note can play at an audible level without the summed mix clipping.
+    _musicGain = _ctx.createGain(); _musicGain.gain.value = 8 / 15; // overwritten by I_SetMusicVolume
+    const musicLimiter = _ctx.createDynamicsCompressor();
+    musicLimiter.threshold.value = -3;
+    musicLimiter.knee.value = 0;
+    musicLimiter.ratio.value = 20;
+    musicLimiter.attack.value = 0.003;
+    musicLimiter.release.value = 0.25;
+    _musicGain.connect(musicLimiter).connect(_ctx.destination);
   }
   return _ctx;
 }
@@ -199,7 +209,7 @@ function _playNote(channel, note, vel) {
   const gain = _musicCtx.createGain();
   osc.type = channel === 9 ? 'square' : 'triangle'; // percussion channel uses square
   osc.frequency.value = midiNoteToFreq(note);
-  gain.gain.value = (vel / 127) * 0.05; // overall music quiet
+  gain.gain.value = (vel / 127) * 0.25; // per-voice level; mix peaks ride the limiter
   osc.connect(gain).connect(_musicGain);
   osc.start();
   _activeNotes.set(channel, { osc, gain, freq: midiNoteToFreq(note), vel });
@@ -254,12 +264,15 @@ function _musicTick() {
   }
 }
 
-// Vanilla i_sound passes 0..127 from S_SetMusicVolume. Linear scale so peak
-// volume doesn't clip — keep a headroom factor.
+// The menu drives music volume on Doom's 0..15 scale (m_menu.js), NOT 0..127 —
+// map it to the full 0..1 gain range. (The previous code divided by 127, so the
+// default volume of 8 came out at ~6% and an extra 0.4 headroom on top of the
+// per-note attenuation made music all but inaudible. The music bus limiter now
+// handles peak control, so no headroom factor is needed here.)
 export function I_SetMusicVolume(vol) {
   if (_musicGain === null) return;
-  if (vol < 0) vol = 0; if (vol > 127) vol = 127;
-  _musicGain.gain.value = (vol / 127) * 0.4;
+  if (vol < 0) vol = 0; if (vol > 15) vol = 15;
+  _musicGain.gain.value = vol / 15;
 }
 export function I_PauseSong(_handle)  { if (_musicTimer !== null) { clearInterval(_musicTimer); _musicTimer = null; } }
 export function I_ResumeSong(_handle) { if (_musicTimer === null && _musicScore !== null) _musicTimer = setInterval(_musicTick, 1000 / 140); }
