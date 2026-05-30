@@ -347,22 +347,26 @@ export function R_InitDefaultAnims() {
   R_AddAnim(true, 'DBRAIN1',  'DBRAIN4',  8);
 }
 
-// Per-tic update — swaps .map on every mesh whose texnum/flatnum sits inside
-// any animation's range. Vanilla uses `texturetranslation[i] = pic` indirection
-// at render time so a sidedef referencing frame 2 of NUKAGE1..3 (i.e. NUKAGE2)
-// also receives the cycling frame.
+// Per-tic update — points every animated mesh's texture at the current frame.
+// p_spec.c:1102-1108 P_UpdateSpecials: for each lump i in an animation's range,
+//   texturetranslation[i] = basepic + ((leveltime/speed + i) % numpics)
+// The `+ i` gives each frame in the cycle a per-index phase offset, so a surface
+// drawn with a mid-cycle lump (e.g. NUKAGE2) animates one step out of phase from
+// the base frame — we reproduce that here.
 export function R_AnimateTextures(leveltime) {
   for (const a of _animatedTextures) {
     const numFrames = a.end - a.start + 1;
-    const frame = (((leveltime / a.speed) | 0) % numFrames) | 0;
-    const curIdx = a.start + frame;
-    const tex = a.isTexture ? R_GetWallTexture(curIdx) : R_GetFlatTexture(curIdx);
-    if (tex === null) continue;
+    const t = (leveltime / a.speed) | 0;
     const byNum = a.isTexture ? _meshesByTexnum : _meshesByFlatnum;
     for (let i = a.start; i <= a.end; i++) {
       const set = byNum.get(i);
       if (set === undefined) continue;
-      for (const m of set) m.material.map = tex;
+      const pic = a.start + ((t + i) % numFrames);
+      const tex = a.isTexture ? R_GetWallTexture(pic) : R_GetFlatTexture(pic);
+      if (tex === null) continue;
+      // The wall/flat ShaderMaterial (R_MakeDoomMaterial) samples the `map`
+      // uniform, NOT material.map — set the uniform so the swap actually renders.
+      for (const m of set) m.material.uniforms.map.value = tex;
     }
   }
 }
