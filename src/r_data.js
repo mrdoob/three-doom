@@ -350,8 +350,7 @@ export function R_InitDefaultAnims() {
 // Per-tic update — swaps .map on every mesh whose texnum/flatnum sits inside
 // any animation's range. Vanilla uses `texturetranslation[i] = pic` indirection
 // at render time so a sidedef referencing frame 2 of NUKAGE1..3 (i.e. NUKAGE2)
-// also receives the cycling frame. The old port only updated meshes registered
-// to the start frame, so mid-anim references like NUKAGE2 / FIREMAG2 stayed put.
+// also receives the cycling frame.
 export function R_AnimateTextures(leveltime) {
   for (const a of _animatedTextures) {
     const numFrames = a.end - a.start + 1;

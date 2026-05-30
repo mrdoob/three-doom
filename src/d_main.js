@@ -1,7 +1,5 @@
 // Ported from: linuxdoom-1.10/d_main.c
-// DOOM main program (D_DoomMain) and game loop (D_DoomLoop). Heavily reduced
-// while subsystem ports come online — only the boot path through to the title
-// screen is wired so far.
+// DOOM main program (D_DoomMain) and game loop (D_DoomLoop).
 
 import { I_Init, I_GetTime, I_Error } from './i_system.js';
 import { I_InitGraphics, I_SetPalette, I_FinishUpdate, I_RenderTint, renderer, scene, camera } from './i_video.js';
@@ -124,10 +122,7 @@ export function D_StartTitle() {
   D_AdvanceDemo();
 }
 
-// D_Display: per-frame composite. Currently only paints the page screen +
-// pumps Three.js. Once r_main.js comes online, GS_LEVEL will call
-// Overlay canvas + 2D context — looked up once and reused. Replaces the
-// per-frame `document.getElementById` lookups that were in every branch below.
+// Overlay canvas + 2D context — looked up once and reused.
 let _overlayCanvas = null, _overlayCtx = null;
 function getOverlay() {
   if (_overlayCanvas === null) {

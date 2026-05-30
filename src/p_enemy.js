@@ -325,8 +325,7 @@ P_RegisterAction('A_Chase', (actor) => {
     // Vanilla p_enemy.c:719 — `gameskill < sk_nightmare && !fastparm && actor->movecount`
     // skips the missile check. The C `actor->movecount` is a non-zero test, so
     // movecount === -1 (after the previous tic's --movecount underflow) still
-    // skips. Using `> 0` excludes that case and makes our actor call
-    // P_CheckMissileRange when vanilla doesn't — desyncs DEMO1 around tic 4189.
+    // skips. Use a non-zero test, not `> 0`, to match.
     const movecountGate = (gameskill !== 4 && actor.movecount !== 0);
     if (!movecountGate && P_CheckMissileRange(actor)) {
       P_SetMobjState(actor, actor.info.missilestate);

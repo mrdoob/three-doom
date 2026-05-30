@@ -42,7 +42,7 @@ export const GOTSHOTGUN2 = 'You got the super shotgun!';
 
 // Locked doors. d_englsh.h:125-130 — O suffix = "activate this object"
 // (used by switch line-actions), K suffix = "open this door" (manual door
-// line-actions). The previous mapping had these pairwise swapped.
+// line-actions).
 export const PD_BLUEO   = 'You need a blue key to activate this object';
 export const PD_REDO    = 'You need a red key to activate this object';
 export const PD_YELLOWO = 'You need a yellow key to activate this object';

@@ -560,11 +560,11 @@ export function G_DoVictory() {
 }
 export function G_WorldDone() {
   set_gameaction(gameaction_t.ga_worlddone);
-  // Vanilla also flips into the finale via wminfo.next after MAP06/11/20/30
-  // commercial breakpoints; not ported yet but the hook lives here.
+  // Vanilla also flips into the finale via wminfo.next after the MAP06/11/20/30
+  // commercial breakpoints.
 }
 // G_DoCompleted stashes `wmNext` (0-biased) so G_DoWorldDone knows where to
-// jump. Falls back to gamemap+1 if nothing is queued (legacy callers).
+// jump. Falls back to gamemap+1 if nothing is queued.
 let _wmNext = -1;
 export function set_wmNext(n) { _wmNext = n; }
 export function G_DoWorldDone() {

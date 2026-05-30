@@ -1,6 +1,5 @@
 // Browser-only debug helper: a free-fly camera that drives Three.js directly,
-// used until the player thinker (p_user.js + p_mobj.js) is online and we can
-// switch to R_RenderPlayerView(players[consoleplayer]).
+// as an alternative to R_RenderPlayerView(players[consoleplayer]).
 //
 // WASD + mouse-look (pointer lock). Q/E to descend/ascend.
 

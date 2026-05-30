@@ -381,8 +381,8 @@ P_RegisterAction('A_Saw', (player) => {
     return;
   }
   if (_S !== null) _S.S_StartSound(player.mo, 13 /*sfx_sawhit*/);
-  // turn to face target (the C code has a complex angle-clamp; for player-only
-  // chainsaw use, the simple R_PointToAngle2 set is the well-tested fallback).
+  // turn to face target — p_pspr.c:524 clamps the turn toward the target to
+  // an ANG90/20 step per tic.
   const lt = _PMap.getLinetarget();
   const targAngle = R_PointToAngle2_safe(player.mo.x, player.mo.y, lt.x, lt.y);
   // Vanilla chainsaw: clamp turn to ANG90/20 step toward target.

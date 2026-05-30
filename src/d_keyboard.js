@@ -19,7 +19,7 @@ let mouseButtons = 0;
 // g_game.c:262 — two-stage accelerative turning. `turnheld` accumulates the
 // number of tics the user has held a turn key; while it's below SLOWTURNTICS
 // we use the slow-turn rate, after which we fall through to the normal/fast
-// rate. Replaces the previous turnHeld-when-not-moving heuristic.
+// rate.
 const SLOWTURNTICS = 6;
 let turnheld = 0;
 // g_game.c:355 — forward double-click → BT_USE shortcut.

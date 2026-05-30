@@ -283,7 +283,7 @@ export function P_RemoveMobj(mo) {
 // Vanilla: gated on `deathmatch == 2` (altdeath). Without this guard, level
 // pickups queued by P_RemoveMobj start respawning 30 seconds in regardless
 // of game mode — which spawns extra mobjs (with the lastlook+tics P_Random
-// pair) mid-demo and desyncs DEMO1 around tic 1110.
+// pair) mid-demo, breaking demo determinism.
 export function P_RespawnSpecials() {
   // Vanilla p_mobj.c:582 — `deathmatch != 2` short-circuits the entire body.
   // Read from doomstat through globalThis to avoid an import-cycle: doomstat

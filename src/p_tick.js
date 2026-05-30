@@ -60,12 +60,9 @@ export function P_RunThinkers() {
   }
 }
 
-// Per-tic trace, lazily enabled by setting `globalThis.__demoTrace = []` from
-// the browser console. One row per executed tic: same fields as the patched
-// chocolate-doom logger, for direct diffing.
-// Demo trace dumper for desync investigation. Off by default; enable from
-// the console with `globalThis.__demoTrace = []` BEFORE the auto-attract
-// demo starts. Each tic pushes [gametic, prndindex, x, y, angle, hp].
+// Per-tic trace dumper, lazily enabled by setting `globalThis.__demoTrace = []`
+// from the browser console before the attract demo starts. Each executed tic
+// pushes one row: [gametic, prndindex, x, y, angle, hp].
 function _maybeTrace() {
   if (typeof globalThis === 'undefined') return;
   const buf = globalThis.__demoTrace;

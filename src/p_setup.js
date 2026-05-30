@@ -228,7 +228,7 @@ export function P_LoadThings(lump) {
       }
     }
     // Record player starts (type 1..4) eagerly so the renderer can place the
-    // camera even before the play simulation comes online.
+    // camera even before the play simulation starts ticking.
     if (mt.type >= 1 && mt.type <= MAXPLAYERS) {
       const ps = playerstarts[mt.type - 1];
       ps.x = mt.x; ps.y = mt.y; ps.angle = mt.angle; ps.type = mt.type; ps.options = mt.options;

@@ -111,7 +111,6 @@ export function P_ArchiveWorld() {
 }
 export function P_UnArchiveWorld(blob) {
   if (blob === undefined || blob === null) return;
-  // Back-compat: previous serialisation was a flat sectors array.
   const sectorArr = Array.isArray(blob) ? blob : blob.sectors;
   const lineArr   = Array.isArray(blob) ? null : blob.lines;
   const sideArr   = Array.isArray(blob) ? null : blob.sides;

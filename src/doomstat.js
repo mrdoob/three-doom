@@ -165,8 +165,8 @@ export function set_singletics(v)  { singletics = v; }
 export function set_bodyqueslot(v) { bodyqueslot = v; }
 // p_map.js / p_mobj.js read skyflatnum off globalThis to avoid an import
 // cycle. Mirror writes so the sky-hack check fires; without this, hitscans
-// passing through "F_SKY1" doorways spawn puffs (and 4 extra P_Random calls)
-// that desync DEMO1 around tic 2763.
+// passing through "F_SKY1" doorways spawn puffs (and extra P_Random calls)
+// that break demo determinism.
 export function set_skyflatnum(v) {
   skyflatnum = v;
   if (typeof globalThis !== 'undefined') globalThis.__doom_skyflatnum = v;

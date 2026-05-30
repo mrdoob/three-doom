@@ -495,7 +495,7 @@ function PIT_RadiusAttack(thing) {
   if (dist >= bombdamage) return true;
   // line of sight check — vanilla p_map.c:1234 only damages targets with a
   // clear sight line to the bomb spot. Skipping this lets explosions damage
-  // monsters behind walls/doors (e.g. demo1 barrel near a door).
+  // monsters behind walls/doors.
   if (!P_CheckSight(thing, bombspot)) return true;
   if (_PInter !== null) _PInter.P_DamageMobj(thing, bombspot, bombsource, bombdamage - dist);
   return true;

@@ -51,8 +51,7 @@ let _active = false;
 let _done   = null;
 const getPatch = V_DecodePatchToCanvas;
 const F_TEXTWAIT = 250;
-// f_finale.c:TEXTSPEED — one character per 3 tics (≈12 chars/s at 35Hz). The
-// previous port used 2/0.5 timing which produced a faster reveal than vanilla.
+// f_finale.c:TEXTSPEED — one character per 3 tics (≈12 chars/s at 35Hz).
 const F_TEXTSPEED = 3;
 const F_TEXTSTART = 10; // tics before the first character appears
 
@@ -173,8 +172,7 @@ export function F_isActive() { return _active; }
 // it, but the functions are here for source-map parity with f_finale.c.
 
 // f_finale.c:118 — castorder[]. HERO is the FINAL entry (the loop runs
-// monsters first, hero last). The previous port had HERO at index 0 which
-// meant the cast call started with you, not the zombieman.
+// monsters first, hero last).
 const CAST_ORDER = [
   { name: 'ZOMBIEMAN',             spr: 'POSS', type: 39 },
   { name: 'SHOTGUN GUY',           spr: 'SPOS', type: 40 },

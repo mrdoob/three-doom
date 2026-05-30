@@ -1,7 +1,5 @@
 // Ported from: linuxdoom-1.10/p_user.c
 // Player thinker: reads player.cmd (ticcmd) and drives player.mo movement.
-// Simplified — collision (P_TryMove) isn't online yet, so movement applies
-// directly without wall clipping.
 
 import { ticcmd_t } from './d_ticcmd.js';
 import { mobj_t, MF_NOCLIP, MF_JUSTATTACKED, ONFLOORZ } from './p_mobj.js';
@@ -169,7 +167,7 @@ export function P_DeathThink(player) {
 
 // P_PlayerThink — p_user.c:236. P_MovePlayer only applies thrust; the actual
 // position update happens in the player mobj's thinker via P_XYMovement,
-// which now relinks the thing via P_TryMove → P_SetThingPosition.
+// which relinks the thing via P_TryMove → P_SetThingPosition.
 import { P_UseLines } from './p_map.js';
 import { P_MovePsprites } from './p_pspr.js';
 export function P_PlayerThink(player) {
@@ -261,9 +259,7 @@ export function P_PlayerThink(player) {
   }
   // (Vanilla does NOT auto-pickup items the player is stationary on top of —
   // pickups only happen through PIT_CheckThing inside P_TryMove, which runs
-  // only when momx/momy is nonzero. A previous port had a fallback loop here
-  // that auto-picked up overlapping items; it was removed for demo parity
-  // with vanilla.)
+  // only when momx/momy is nonzero.)
 }
 
 // Externals for sector specials.

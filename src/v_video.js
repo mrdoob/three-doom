@@ -263,9 +263,8 @@ export function V_GetBlock(x, y, scrn, width, height, dest) {
 }
 
 // V_DecodePatchToCanvas — decode a WAD patch lump to an off-screen Canvas
-// once and cache it. Consolidates a decoder that was previously copy-pasted
-// across hu_stuff / st_stuff / m_menu / f_finale. Returns
-// `{ canvas, w, h, leftoffset, topoffset }` or null if the lump is missing.
+// once and cache it. Returns `{ canvas, w, h, leftoffset, topoffset }` or
+// null if the lump is missing.
 const _patchCanvasCache = new Map();
 // External PNG files registered as patches (e.g. UI graphics that aren't in
 // the WAD). Lookup wins over the WAD path so callers don't need to know.

@@ -338,8 +338,7 @@ export function M_Responder(ev) {
     else if (it.action != null) { it.action(); S_StartSound(null, sfx_pistol); }
     return true;
   }
-  // doomdef.h:KEY_BACKSPACE = 127. The previous port used 0x08 (ASCII BS),
-  // which never reaches us because d_keyboard sends 127 for Backspace per
+  // doomdef.h:KEY_BACKSPACE = 127 — d_keyboard sends 127 for Backspace per
   // the vanilla mapping.
   if (key === KEY_BACKSPACE) {
     // m_menu.c:1688 — sfx_swtchn only when there's a previous menu to pop to.

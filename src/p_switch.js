@@ -94,9 +94,7 @@ export function P_UpdateButtons() {
 
 // p_switch.c:194 P_ChangeSwitchTexture. The C source plays the switch sound
 // only when a matching switch texture is actually found; lines that aren't in
-// alphSwitchList just fall through and emit nothing. The previous JS port
-// played the sound unconditionally, so any spurious 'use' on a non-switch
-// linedef clicked even though no texture flipped.
+// alphSwitchList just fall through and emit nothing.
 export function P_ChangeSwitchTexture(line, useAgain) {
   if (useAgain === 0) line.special = 0;
   const sd = sides[line.sidenum[0]];
