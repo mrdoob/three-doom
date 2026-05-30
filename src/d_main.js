@@ -7,7 +7,7 @@ import { V_Init, V_DrawPatch, screens, patch_t } from './v_video.js';
 import { W_InitMultipleFiles, W_CheckNumForName, W_CacheLumpName, W_CacheLumpNum } from './w_wad.js';
 import { M_CheckParm, myargv, myargc } from './m_argv.js';
 import { M_LoadDefaults } from './m_misc.js';
-import { SCREENWIDTH, SCREENHEIGHT, gamestate_t, GameMode_t } from './doomdef.js';
+import { SCREENWIDTH, SCREENHEIGHT, gamestate_t, GameMode_t, TICRATE } from './doomdef.js';
 import { mus_intro, mus_dm2ttl } from './sounds.js';
 import * as doomstat from './doomstat.js';
 import { gamestate, set_gamestate, set_gamemode, set_devparm, set_nomonsters, set_respawnparm, set_fastparm, set_gameepisode, set_gamemap, set_gameskill } from './doomstat.js';
@@ -226,6 +226,13 @@ function D_Display() {
 // requestAnimationFrame and a 35Hz tic accumulator.
 let _lastTime = 0;
 let _ticAccum = 0;
+// Max tics the sim runs per frame, and the cap we clamp the accumulator to.
+// A backgrounded tab (or any long stall) suspends requestAnimationFrame; on
+// return the first frame's dt spans the whole gap, so without a clamp we'd owe
+// a huge tic backlog and "fast-forward" through it. Vanilla bounds catch-up the
+// same way: TryRunTics caps counts at availabletics (d_net.c:668). Clamping the
+// accumulator to this value discards the backlog and resyncs to real time.
+const MAXCATCHUP = 4;
 let _pTicker = null;
 let _updateSprites = null;
 let _drawPlayerSprites = null;
@@ -295,9 +302,11 @@ async function D_DoomLoop() {
     if (_lastTime === 0) _lastTime = now;
     const dt = (now - _lastTime) / 1000;
     _lastTime = now;
-    _ticAccum += dt * 35;
-    let ticsRun = 0;
-    while (_ticAccum >= 1 && ticsRun < 4) {
+    _ticAccum += dt * TICRATE;
+    // Don't accumulate a backlog past what one frame can drain — a long stall
+    // (hidden tab, breakpoint, GC) resyncs to now instead of fast-forwarding.
+    if (_ticAccum > MAXCATCHUP) _ticAccum = MAXCATCHUP;
+    while (_ticAccum >= 1) {
       _ticAccum -= 1;
       // d_net.c:746 — gametic is incremented once per tic, before any per-tic
       // logic runs. Used for ambient sound scheduling, levelstarttic offsets,
@@ -324,7 +333,6 @@ async function D_DoomLoop() {
         // before ticking the play sim. Without this, monsters' P_LookForPlayers
         // sees all-false playeringame[] and infinite-loops on its for(;;) cycle.
         if (p === undefined || p === null || p.mo === null) {
-          ticsRun++;
           continue;
         }
         if (doomstat.demoplayback && _gReadDemoCmd !== null) {
@@ -347,7 +355,6 @@ async function D_DoomLoop() {
         // Drive the intermission counters + 'press key to continue' timer.
         _wiTicker();
       }
-      ticsRun++;
     }
     D_Display();
     requestAnimationFrame(frame);
