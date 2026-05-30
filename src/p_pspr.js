@@ -10,6 +10,7 @@ import { finecosine, finesine, FINEMASK } from './tables.js';
 import { gamemode, leveltime } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
 import { R_PointToAngle2 } from './r_bsp.js';
+import { MF_JUSTATTACKED } from './p_mobj.js';
 
 // Safe wrapper for R_PointToAngle2 — guards against missing imports during init.
 function R_PointToAngle2_safe(x1, y1, x2, y2) {
@@ -376,7 +377,6 @@ P_RegisterAction('A_Saw', (player) => {
   if (_PMap !== null) _PMap.P_LineAttack(player.mo, angle, range, slope, damage);
   if (_PMap === null || _PMap.getLinetarget() === null) {
     // p_pspr.c:520 — miss plays sfx_sawful (12), the chainsaw's full-rev roar.
-    // (id 14 here was sfx_rlaunc, the rocket-launcher whoosh.)
     if (_S !== null) _S.S_StartSound(player.mo, 12 /*sfx_sawful*/);
     return;
   }
@@ -400,8 +400,9 @@ P_RegisterAction('A_Saw', (player) => {
     if (da > step) player.mo.angle = (targAngle - step2) >>> 0;
     else           player.mo.angle = (player.mo.angle + step) >>> 0;
   }
-  // MF_JUSTATTACKED — kept here for parity with vanilla.
-  player.mo.flags |= 0x10000 /*MF_JUSTATTACKED*/;
+  // p_pspr.c:542 — flag the player so P_PlayerThink does the chainsaw
+  // run-forward lunge next tic.
+  player.mo.flags |= MF_JUSTATTACKED;
 });
 // p_pspr.c shotgun/super/chaingun all damage 5*(P_Random()%3+1) per pellet.
 function shotgunDamage() { return 5 * (P_Random() % 3 + 1); }

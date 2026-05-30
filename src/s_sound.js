@@ -179,8 +179,7 @@ function S_AdjustSoundParams(listener, source) {
     const fa = (angle >>> ANGLETOFINESHIFT) & FINEMASK;
     // s_sound.c:793  *sep = 128 - (FixedMul(S_STEREO_SWING,finesine[angle])>>16)
     //  with S_STEREO_SWING = 96*FRACUNIT, so the offset is (96*finesine)>>16.
-    //  96*finesine stays within int32 (96*65536 = 6291456), so a single >>16 is
-    //  exact — the old `(finesine*S_STEREO_SWING)>>24` overflowed int32 to junk.
+    //  96*finesine stays within int32 (96*65536 = 6291456), so a single >>16 is exact.
     sep = NORM_SEP - ((96 * finesine[fa]) >> 16);
     if (sep < 0)   sep = 0;
     if (sep > 255) sep = 255;
