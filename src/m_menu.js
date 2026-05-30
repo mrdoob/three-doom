@@ -182,8 +182,13 @@ export function M_StartMessage(text, routine, input) {
 export function M_StopMessage() { _message = null; }
 
 // ---------- Navigation ----------
-function pushMenu(m) { _menuStack.push(_currentMenu); _currentMenu = m; _selected = 0; }
-function popMenu()   { _currentMenu = _menuStack.pop() || MAIN_MENU; _selected = 0; }
+// m_menu.c:166 menu_t.lastOn — each menu remembers the cursor position the user
+// was last on. M_SetupNextMenu restores it on entry; the key handlers save it on
+// exit. We mirror that by stashing/restoring `lastOn` on the menu objects across
+// push/pop, so backing out lands on the row you descended from (default 0).
+function _restoreCursor(m) { _selected = (m.lastOn === undefined) ? 0 : m.lastOn; }
+function pushMenu(m) { _currentMenu.lastOn = _selected; _menuStack.push(_currentMenu); _currentMenu = m; _restoreCursor(m); }
+function popMenu()   { _currentMenu.lastOn = _selected; const prev = _menuStack.pop(); _currentMenu = (prev === undefined) ? MAIN_MENU : prev; _restoreCursor(_currentMenu); }
 // m_menu.c:1686-1693 — back out one level, playing sfx_swtchn only when there
 // was a parent to pop to. Shared by Backspace and (in this port) Escape; returns
 // whether a parent existed.
@@ -274,6 +279,10 @@ export function M_StartControlPanel() {
     : MAIN_MENU_BASE_ITEMS;
   _currentMenu = MAIN_MENU;
   _menuStack = [];
+  // DEVIATION from m_menu.c:1827 — vanilla restores MAIN_MENU.lastOn on open,
+  // but we rebuild MAIN_MENU.items just above (the conditional Continue row), so
+  // a saved index could mis-point. Open onto the top row instead; the lastOn
+  // memory (see pushMenu/popMenu) is kept only for back-out within an open panel.
   _selected = 0;
   // m_menu.c:1614 — opening the control panel plays sfx_swtchn. Placed here
   // (rather than at each call site, as vanilla does) so every open path — ESC,
@@ -285,7 +294,7 @@ export function M_ClearMenus() {
   set_menuactive(false);
   _menuStack = [];
   _currentMenu = MAIN_MENU;
-  _selected = 0;
+  _selected = 0; // fresh root state on close; see the lastOn note in M_StartControlPanel.
 }
 export function M_Toggle() {
   if (menuactive) M_ClearMenus(); else M_StartControlPanel();
