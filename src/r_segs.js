@@ -13,6 +13,7 @@ import { ML_TWOSIDED, ML_DONTPEGTOP, ML_DONTPEGBOTTOM } from './doomdata.js';
 import { skyflatnum } from './doomstat.js';
 import { R_GetWallTexture, textures, R_RegisterWallMesh } from './r_data.js';
 import { R_MakeDoomMaterial } from './r_shader.js';
+import { top, middle, bottom, P_IsSwitchTexture } from './p_switch.js';
 
 // Per-sector wall-quad contributions, so R_UpdateSectorWalls can re-write the
 // Y coordinates when a door/lift/floor moves. Each entry knows how to
@@ -24,6 +25,26 @@ function attachContrib(sectorRef, c) {
   let arr = _wallContribs.get(sectorRef);
   if (arr === undefined) { arr = []; _wallContribs.set(sectorRef, arr); }
   arr.push(c);
+}
+
+// Switch walls each get a PRIVATE single-quad bucket at build time, instead of
+// being batched with other walls sharing the texture. That lets
+// P_ChangeSwitchTexture re-texture one switch in place (a uniform swap) without
+// disturbing its neighbours. Map<line, { [slot]: bucket }>, keyed by p_switch's
+// top/middle/bottom slot.
+const _switchWalls = new Map();
+
+// Re-texture a switch wall in place after its sidedef texture number flips.
+// No-op if (line, slot) isn't a registered switch wall.
+export function R_SetSwitchTexture(line, slot, texnum) {
+  const rec = _switchWalls.get(line);
+  if (rec === undefined) return;
+  const b = rec[slot];
+  if (b === undefined || b.mesh === undefined) return;
+  const tex = R_GetWallTexture(texnum);
+  if (tex === null) return;
+  b.mesh.material.uniforms.map.value = tex;
+  b.texnum = texnum;
 }
 
 // Compute (vTop, vBottom) for a quad given its texture anchor in world Y.
@@ -130,8 +151,10 @@ export function R_UpdateSectorWallLight(sector) {
 // (one-sided, upper, lower) go in the opaque bucket.
 export function R_BuildWalls(scene) {
   _wallContribs.clear();
-  const opaqueBuckets = new Map(); // texnum -> bucket
-  const maskedBuckets = new Map(); // texnum -> bucket
+  _switchWalls.clear();
+  let switchSeq = 0; // unique-bucket counter for private switch-wall meshes
+  const opaqueBuckets = new Map(); // bucket key -> bucket
+  const maskedBuckets = new Map(); // bucket key -> bucket
 
   // frontFacing = true → triangle winding makes the normal point toward the
   // Doom-front side of the linedef (FrontSide material then renders the wall
@@ -139,15 +162,26 @@ export function R_BuildWalls(scene) {
   // toward Doom-back, visible only from the back sector. Both layouts keep
   // the same vertex/UV order (u0 at v1, u1 at v2), so each sidedef's
   // textureoffset anchors correctly.
+  // Returns { bucket, baseIdx } for the pushed quad, or null if skipped.
+  // switchSlot/switchLine (optional) mark a front-side switch surface: it gets
+  // its own private bucket and is recorded in _switchWalls for runtime swapping.
   function pushQuad(buckets, texnum, x1, y1, x2, y2, zBottom, zTop,
-                    uOffset, anchorY, rowoffset, lightlevel, frontFacing) {
-    if (texnum <= 0) return -1;
+                    uOffset, anchorY, rowoffset, lightlevel, frontFacing,
+                    switchSlot, switchLine) {
+    if (texnum <= 0) return null;
     const tex = textures[texnum];
-    if (tex === undefined) return -1;
-    let b = buckets.get(texnum);
+    if (tex === undefined) return null;
+    const isSwitch = switchSlot !== undefined && P_IsSwitchTexture(texnum);
+    const key = isSwitch ? ('sw:' + (switchSeq++)) : texnum;
+    let b = buckets.get(key);
     if (b === undefined) {
-      b = { positions: [], uvs: [], colors: [], indices: [] };
-      buckets.set(texnum, b);
+      b = { positions: [], uvs: [], colors: [], indices: [], texnum };
+      buckets.set(key, b);
+      if (isSwitch) {
+        let rec = _switchWalls.get(switchLine);
+        if (rec === undefined) { rec = {}; _switchWalls.set(switchLine, rec); }
+        rec[switchSlot] = b;
+      }
     }
     const dx = x2 - x1, dy = y2 - y1;
     const length = Math.sqrt(dx * dx + dy * dy);
@@ -169,7 +203,7 @@ export function R_BuildWalls(scene) {
     } else {
       b.indices.push(baseIdx, baseIdx + 2, baseIdx + 1, baseIdx, baseIdx + 3, baseIdx + 2);
     }
-    return baseIdx;
+    return { bucket: b, baseIdx };
   }
 
   // For each linedef, build wall geometry.
@@ -208,10 +242,10 @@ export function R_BuildWalls(scene) {
     if ((li.flags & ML_TWOSIDED) === 0 || li.backsector === null) {
       const texH = _texH(sd0.midtexture);
       const anchor = dontPegBottom ? (frontFloor + texH) : frontCeiling;
-      const bi = pushQuad(opaqueBuckets, sd0.midtexture, x1, y1, x2, y2, frontFloor, frontCeiling,
-        sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true);
-      if (bi >= 0) attachContrib(front, {
-        bucket: opaqueBuckets.get(sd0.midtexture), baseIdx: bi, front, back: null,
+      const r = pushQuad(opaqueBuckets, sd0.midtexture, x1, y1, x2, y2, frontFloor, frontCeiling,
+        sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true, middle, li);
+      if (r !== null) attachContrib(front, {
+        bucket: r.bucket, baseIdx: r.baseIdx, front, back: null,
         kind: 'one-sided', rowoffset: sd0.rowoffset/65536, texH,
         dontPegTop, dontPegBottom, lightSector: front, contrast,
       });
@@ -231,10 +265,10 @@ export function R_BuildWalls(scene) {
       if (frontCeiling > backCeiling && skyToSky !== true) {
         const texH = _texH(sd0.toptexture);
         const anchor = dontPegTop ? frontCeiling : (backCeiling + texH);
-        const bi = pushQuad(opaqueBuckets, sd0.toptexture, x1, y1, x2, y2, backCeiling, frontCeiling,
-          sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true);
-        if (bi >= 0) {
-          const c = { bucket: opaqueBuckets.get(sd0.toptexture), baseIdx: bi, front, back,
+        const r = pushQuad(opaqueBuckets, sd0.toptexture, x1, y1, x2, y2, backCeiling, frontCeiling,
+          sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true, top, li);
+        if (r !== null) {
+          const c = { bucket: r.bucket, baseIdx: r.baseIdx, front, back,
             kind: 'upper-front', rowoffset: sd0.rowoffset/65536, texH,
             dontPegTop, dontPegBottom, lightSector: front, contrast };
           attachContrib(front, c); attachContrib(back, c);
@@ -246,10 +280,10 @@ export function R_BuildWalls(scene) {
         // DONTPEGBOTTOM anchors at the front ceiling so the texture continues
         // through the lower section (vanilla r_segs.c rw_bottomtexturemid = worldtop).
         const anchor = dontPegBottom ? frontCeiling : backFloor;
-        const bi = pushQuad(opaqueBuckets, sd0.bottomtexture, x1, y1, x2, y2, frontFloor, backFloor,
-          sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true);
-        if (bi >= 0) {
-          const c = { bucket: opaqueBuckets.get(sd0.bottomtexture), baseIdx: bi, front, back,
+        const r = pushQuad(opaqueBuckets, sd0.bottomtexture, x1, y1, x2, y2, frontFloor, backFloor,
+          sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true, bottom, li);
+        if (r !== null) {
+          const c = { bucket: r.bucket, baseIdx: r.baseIdx, front, back,
             kind: 'lower-front', rowoffset: sd0.rowoffset/65536, texH,
             dontPegTop, dontPegBottom, lightSector: front, contrast };
           attachContrib(front, c); attachContrib(back, c);
@@ -263,10 +297,10 @@ export function R_BuildWalls(scene) {
         if (yTop > yBottom) {
           const texH = _texH(sd0.midtexture);
           const anchor = dontPegBottom ? (yBottom + texH) : yTop;
-          const bi = pushQuad(maskedBuckets, sd0.midtexture, x1, y1, x2, y2, yBottom, yTop,
-            sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true);
-          if (bi >= 0) {
-            const c = { bucket: maskedBuckets.get(sd0.midtexture), baseIdx: bi, front, back,
+          const r = pushQuad(maskedBuckets, sd0.midtexture, x1, y1, x2, y2, yBottom, yTop,
+            sd0.textureoffset / 65536, anchor, sd0.rowoffset / 65536, baseLight, true, middle, li);
+          if (r !== null) {
+            const c = { bucket: r.bucket, baseIdx: r.baseIdx, front, back,
               kind: 'middle-front', rowoffset: sd0.rowoffset/65536, texH,
               dontPegTop, dontPegBottom, lightSector: front, contrast };
             attachContrib(front, c); attachContrib(back, c);
@@ -280,10 +314,10 @@ export function R_BuildWalls(scene) {
         if (backCeiling > frontCeiling && skyToSky !== true) {
           const texH = _texH(sd1.toptexture);
           const anchor = dontPegTop ? backCeiling : (frontCeiling + texH);
-          const bi = pushQuad(opaqueBuckets, sd1.toptexture, x1, y1, x2, y2, frontCeiling, backCeiling,
+          const r = pushQuad(opaqueBuckets, sd1.toptexture, x1, y1, x2, y2, frontCeiling, backCeiling,
             sd1.textureoffset / 65536, anchor, sd1.rowoffset / 65536, backLight, false);
-          if (bi >= 0) {
-            const c = { bucket: opaqueBuckets.get(sd1.toptexture), baseIdx: bi, front, back,
+          if (r !== null) {
+            const c = { bucket: r.bucket, baseIdx: r.baseIdx, front, back,
               kind: 'upper-back', rowoffset: sd1.rowoffset/65536, texH,
               dontPegTop, dontPegBottom, lightSector: back, contrast };
             attachContrib(front, c); attachContrib(back, c);
@@ -292,10 +326,10 @@ export function R_BuildWalls(scene) {
         if (frontFloor > backFloor) {
           const texH = _texH(sd1.bottomtexture);
           const anchor = dontPegBottom ? backCeiling : frontFloor;
-          const bi = pushQuad(opaqueBuckets, sd1.bottomtexture, x1, y1, x2, y2, backFloor, frontFloor,
+          const r = pushQuad(opaqueBuckets, sd1.bottomtexture, x1, y1, x2, y2, backFloor, frontFloor,
             sd1.textureoffset / 65536, anchor, sd1.rowoffset / 65536, backLight, false);
-          if (bi >= 0) {
-            const c = { bucket: opaqueBuckets.get(sd1.bottomtexture), baseIdx: bi, front, back,
+          if (r !== null) {
+            const c = { bucket: r.bucket, baseIdx: r.baseIdx, front, back,
               kind: 'lower-back', rowoffset: sd1.rowoffset/65536, texH,
               dontPegTop, dontPegBottom, lightSector: back, contrast };
             attachContrib(front, c); attachContrib(back, c);
@@ -310,7 +344,8 @@ export function R_BuildWalls(scene) {
   group.name = 'walls';
 
   function buildBucketMeshes(buckets, masked) {
-    for (const [texnum, b] of buckets) {
+    for (const b of buckets.values()) {
+      const texnum = b.texnum; // bucket key may be a private 'sw:N' for switches
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
       g.setAttribute('uv',       new THREE.Float32BufferAttribute(b.uvs, 2));

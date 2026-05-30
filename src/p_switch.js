@@ -42,6 +42,10 @@ export const top = 0, middle = 1, bottom = 2;
 // switchlist[2*i] = off-texture, switchlist[2*i+1] = on-texture.
 let switchlist = [];
 let numswitches = 0;
+// Texnums (off and on) of every active switch, for O(1) membership tests — the
+// 3D renderer asks "is this wall a switch?" when building wall geometry.
+const _switchTexSet = new Set();
+export function P_IsSwitchTexture(texnum) { return _switchTexSet.has(texnum); }
 
 // Active buttons (countdown timers to flip back).
 const MAXBUTTONS = 16;
@@ -49,15 +53,25 @@ const buttonlist = new Array(MAXBUTTONS);
 for (let i = 0; i < MAXBUTTONS; i++) buttonlist[i] = { line: null, where: 0, btexture: 0, btimer: 0 };
 
 let _S = null;
-export function P_SwitchSetExternals(refs) { if (refs.S != null) _S = refs.S; }
+// Injected so the 3D renderer can re-texture the switch wall in place when it
+// flips (the wall lives in a per-texture mesh built once; r_segs owns it).
+let _R_SetSwitchTexture = null;
+export function P_SwitchSetExternals(refs) {
+  if (refs.S != null) _S = refs.S;
+  if (refs.R_SetSwitchTexture != null) _R_SetSwitchTexture = refs.R_SetSwitchTexture;
+}
 
 export function P_InitSwitchList(episode) {
   switchlist = [];
+  _switchTexSet.clear();
   for (const [n1, n2, ep] of alphSwitchList) {
     if (ep > episode) continue;
     const t1 = R_CheckTextureNumForName(n1);
     const t2 = R_CheckTextureNumForName(n2);
-    if (t1 >= 0 && t2 >= 0) { switchlist.push(t1); switchlist.push(t2); }
+    if (t1 >= 0 && t2 >= 0) {
+      switchlist.push(t1); switchlist.push(t2);
+      _switchTexSet.add(t1); _switchTexSet.add(t2);
+    }
   }
   numswitches = switchlist.length / 2;
 }
@@ -84,6 +98,7 @@ export function P_UpdateButtons() {
       if      (b.where === top)    sd.toptexture    = b.btexture;
       else if (b.where === middle) sd.midtexture    = b.btexture;
       else if (b.where === bottom) sd.bottomtexture = b.btexture;
+      if (_R_SetSwitchTexture !== null) _R_SetSwitchTexture(b.line, b.where, b.btexture);
       // p_spec.c:1151 — button-return click is positional from the switch's
       // sector soundorg (C stores it on the button; we read it off the line).
       if (_S !== null) _S.S_StartSound(b.line.frontsector.soundorg, 23 /*sfx_swtchn*/);
@@ -109,18 +124,21 @@ export function P_ChangeSwitchTexture(line, useAgain) {
     if (switchlist[i] === texTop) {
       if (_S !== null) _S.S_StartSound(line.frontsector.soundorg, sound);
       sd.toptexture = switchlist[i ^ 1];
+      if (_R_SetSwitchTexture !== null) _R_SetSwitchTexture(line, top, switchlist[i ^ 1]);
       if (useAgain !== 0) P_StartButton(line, top, texTop, 35);
       return;
     }
     if (switchlist[i] === texMid) {
       if (_S !== null) _S.S_StartSound(line.frontsector.soundorg, sound);
       sd.midtexture = switchlist[i ^ 1];
+      if (_R_SetSwitchTexture !== null) _R_SetSwitchTexture(line, middle, switchlist[i ^ 1]);
       if (useAgain !== 0) P_StartButton(line, middle, texMid, 35);
       return;
     }
     if (switchlist[i] === texBot) {
       if (_S !== null) _S.S_StartSound(line.frontsector.soundorg, sound);
       sd.bottomtexture = switchlist[i ^ 1];
+      if (_R_SetSwitchTexture !== null) _R_SetSwitchTexture(line, bottom, switchlist[i ^ 1]);
       if (useAgain !== 0) P_StartButton(line, bottom, texBot, 35);
       return;
     }

@@ -484,7 +484,8 @@ export async function D_DoomMain() {
     R_UpdateSectorLight: rPlane.R_UpdateSectorLight,
   });
   const pSwitch = await import('./p_switch.js');
-  pSwitch.P_SwitchSetExternals({ S });
+  const rSegs = await import('./r_segs.js');
+  pSwitch.P_SwitchSetExternals({ S, R_SetSwitchTexture: rSegs.R_SetSwitchTexture });
   // p_setup.c:P_Init calls P_InitSwitchList — builds the switch off/on texture
   // pairs. Episode gates the set (shareware=1, registered/retail=2,
   // commercial=3). Without this switchlist stays empty and no switch flips.
