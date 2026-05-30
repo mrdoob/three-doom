@@ -115,19 +115,20 @@ const OPTIONS_MENU = { name: 'Options', x: 60, y: 37, items: [
   { spacer: true },
   { patch: 'M_SVOL',   label: 'Sound Volume',      action: () => pushMenu(SOUND_MENU) },
 ]};
+// m_menu.c:339 options_e — row indices into OPTIONS_MENU.items, each one below
+// vanilla's since the "End Game" row is omitted. Each thermo sits on the spacer
+// row one line below its slider label, hence the `+ 1`.
+const opt_messages = 0, opt_detail = 1, opt_scrnsize = 2, opt_mousesens = 4;
 // m_menu.c:951-966 M_DrawOptions — title, on/off + hi/lo indicators, thermos.
-// Row indices run one below m_menu.c's because the "End Game" row (idx 0) is
-// omitted here.
 OPTIONS_MENU.draw = (ctx, lx, ly, sx, sy) => {
   const x = OPTIONS_MENU.x, y = OPTIONS_MENU.y, LH = LINE_HEIGHT;
   _drawPatchDoom(ctx, 'M_OPTTTL', 108, 15, lx, ly, sx, sy);
-  // detailNames[detailLevel] (0=high,1=low) on the detail row (idx 1).
-  _drawPatchDoom(ctx, _detailLevel === 0 ? 'M_GDHIGH' : 'M_GDLOW', x + 175, y + LH * 1, lx, ly, sx, sy);
-  // msgNames[showMessages] (0=off,1=on) on the messages row (idx 0).
-  _drawPatchDoom(ctx, showMessages === true ? 'M_MSGON' : 'M_MSGOFF', x + 120, y + LH * 0, lx, ly, sx, sy);
-  // Thermos on the spacer rows: mousesens+1 (idx 5), scrnsize+1 (idx 3).
-  M_DrawThermo(ctx, x, y + LH * 5, 10, _mouseSens,  lx, ly, sx, sy);
-  M_DrawThermo(ctx, x, y + LH * 3,  9, _screenSize, lx, ly, sx, sy);
+  // detailNames[detailLevel] (0=high,1=low) beside the Graphic Detail label.
+  _drawPatchDoom(ctx, _detailLevel === 0 ? 'M_GDHIGH' : 'M_GDLOW', x + 175, y + LH * opt_detail, lx, ly, sx, sy);
+  // msgNames[showMessages] (0=off,1=on) beside the Messages label.
+  _drawPatchDoom(ctx, showMessages === true ? 'M_MSGON' : 'M_MSGOFF', x + 120, y + LH * opt_messages, lx, ly, sx, sy);
+  M_DrawThermo(ctx, x, y + LH * (opt_mousesens + 1), 10, _mouseSens,  lx, ly, sx, sy);
+  M_DrawThermo(ctx, x, y + LH * (opt_scrnsize  + 1),  9, _screenSize, lx, ly, sx, sy);
 };
 
 // m_menu.c:422-447 — SoundMenu also has spacer rows (sfx_empty1/2) holding the
@@ -183,6 +184,15 @@ export function M_StopMessage() { _message = null; }
 // ---------- Navigation ----------
 function pushMenu(m) { _menuStack.push(_currentMenu); _currentMenu = m; _selected = 0; }
 function popMenu()   { _currentMenu = _menuStack.pop() || MAIN_MENU; _selected = 0; }
+// m_menu.c:1686-1693 — back out one level, playing sfx_swtchn only when there
+// was a parent to pop to. Shared by Backspace and (in this port) Escape; returns
+// whether a parent existed.
+function M_Back() {
+  const hadPrev = _menuStack.length > 0;
+  popMenu();
+  if (hadPrev === true) S_StartSound(null, sfx_swtchn);
+  return hadPrev;
+}
 // m_menu.c:1624-1642 — move the cursor by `delta`, skipping spacer rows (status:-1).
 function _moveCursor(m, delta) {
   const n = m.items.length;
@@ -297,10 +307,12 @@ export function M_Responder(ev) {
     return true;
   }
   if (key === KEY_ESCAPE) {
-    // m_menu.c:1683 — ESC closes the menu with sfx_swtchx; the open path
-    // (M_StartControlPanel) plays sfx_swtchn itself, m_menu.c:1614.
-    if (menuactive === true) { M_ClearMenus(); S_StartSound(null, sfx_swtchx); }
-    else M_StartControlPanel();
+    // m_menu.c:1680-1684 — vanilla ESC always closes the menu. DEVIATION: in
+    // this port ESC inside a sub-section backs out one level (like Backspace,
+    // m_menu.c:1686), and only closes outright when already at the root menu.
+    // The open path (M_StartControlPanel) plays sfx_swtchn itself, m_menu.c:1614.
+    if (menuactive !== true) { M_StartControlPanel(); return true; }
+    if (M_Back() !== true) { M_ClearMenus(); S_StartSound(null, sfx_swtchx); }
     return true;
   }
   if (menuactive !== true) return false;
@@ -331,10 +343,8 @@ export function M_Responder(ev) {
   // doomdef.h:KEY_BACKSPACE = 127 — d_keyboard sends 127 for Backspace per
   // the vanilla mapping.
   if (key === KEY_BACKSPACE) {
-    // m_menu.c:1688 — sfx_swtchn only when there's a previous menu to pop to.
-    const hadPrev = _menuStack.length > 0;
-    popMenu();
-    if (hadPrev === true) S_StartSound(null, sfx_swtchn);
+    // m_menu.c:1686-1693 — back out one level.
+    M_Back();
     return true;
   }
   return true;
