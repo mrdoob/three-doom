@@ -3,14 +3,13 @@
 //                                 ↘ Load Game / Save Game
 //                                 ↘ Read This (help screens)
 //                                 ↘ Options → Sound / Detail / Screen size /
-//                                              Mouse sensitivity / Messages /
-//                                              End Game
+//                                              Mouse sensitivity / Messages
 //                                 ↘ Quit (with random message)
 //
 // The 3D port draws menus via Canvas2D using the WAD's M_* patches when
 // available, falling back to a monospace font for items.
 
-import { menuactive, set_menuactive, gamestate, gamemode, demoplayback, usergame } from './doomstat.js';
+import { menuactive, set_menuactive, gamestate, gamemode, demoplayback } from './doomstat.js';
 import { GameMode_t, KEY_UPARROW, KEY_DOWNARROW, KEY_LEFTARROW, KEY_RIGHTARROW,
   KEY_BACKSPACE, KEY_ESCAPE, KEY_ENTER } from './doomdef.js';
 import { G_DeferedInitNew, G_LoadGame, G_SaveGame } from './g_game.js';
@@ -18,7 +17,7 @@ import { G_DeferedInitNew, G_LoadGame, G_SaveGame } from './g_game.js';
 // cursor move, pistol on select, stnmov on slider, swtchn/swtchx on open/back/
 // close, oof on an invalid action.
 import { S_StartSound } from './s_sound.js';
-import { sfx_pstop, sfx_pistol, sfx_stnmov, sfx_swtchn, sfx_swtchx, sfx_oof } from './sounds.js';
+import { sfx_pstop, sfx_pistol, sfx_stnmov, sfx_swtchn, sfx_swtchx } from './sounds.js';
 import { HU_ToggleMessages, showMessages } from './hu_stuff.js';
 import { D_AcquirePointerLock } from './d_keyboard.js';
 import { V_DecodePatchToCanvas, V_DrawPatchAtCanvas, V_RegisterPNGPatch } from './v_video.js';
@@ -102,12 +101,12 @@ const SKILL_MENU = { name: 'Skill', x: 48, y: 63, items: [
   { patch: 'M_NMARE', label: 'Nightmare!',             action: () => _chooseSkill(4) },
 ]};
 
-// m_menu.c:339-372 — OptionsMenu has 8 entries: the two `status:-1` spacer
-// rows (option_empty1/2) reserve the lines on which M_DrawOptions draws the
-// screen-size and mouse-sensitivity thermos (one line BELOW each slider's
-// label). The faithful indicators/title/thermos are painted by `draw` below.
+// m_menu.c:339-372 — OptionsMenu (the "End Game" entry is intentionally
+// omitted in this port). The two `status:-1` spacer rows (option_empty1/2)
+// reserve the lines on which M_DrawOptions draws the screen-size and
+// mouse-sensitivity thermos (one line BELOW each slider's label). The faithful
+// indicators/title/thermos are painted by `draw` below.
 const OPTIONS_MENU = { name: 'Options', x: 60, y: 37, items: [
-  { patch: 'M_ENDGAM', label: 'End Game',          action: () => M_EndGame() },
   { patch: 'M_MESSG',  label: 'Messages',          action: () => HU_ToggleMessages() },
   { patch: 'M_DETAIL', label: 'Graphic Detail',    action: () => { _detailLevel ^= 1; } },
   { patch: 'M_SCRNSZ', label: 'Screen Size',       slider: true, get: () => _screenSize, set: (v) => M_SizeDisplay(v > _screenSize ? 1 : 0) },
@@ -117,16 +116,18 @@ const OPTIONS_MENU = { name: 'Options', x: 60, y: 37, items: [
   { patch: 'M_SVOL',   label: 'Sound Volume',      action: () => pushMenu(SOUND_MENU) },
 ]};
 // m_menu.c:951-966 M_DrawOptions — title, on/off + hi/lo indicators, thermos.
+// Row indices run one below m_menu.c's because the "End Game" row (idx 0) is
+// omitted here.
 OPTIONS_MENU.draw = (ctx, lx, ly, sx, sy) => {
   const x = OPTIONS_MENU.x, y = OPTIONS_MENU.y, LH = LINE_HEIGHT;
   _drawPatchDoom(ctx, 'M_OPTTTL', 108, 15, lx, ly, sx, sy);
-  // detailNames[detailLevel] (0=high,1=low) on the detail row (idx 2).
-  _drawPatchDoom(ctx, _detailLevel === 0 ? 'M_GDHIGH' : 'M_GDLOW', x + 175, y + LH * 2, lx, ly, sx, sy);
-  // msgNames[showMessages] (0=off,1=on) on the messages row (idx 1).
-  _drawPatchDoom(ctx, showMessages === true ? 'M_MSGON' : 'M_MSGOFF', x + 120, y + LH * 1, lx, ly, sx, sy);
-  // Thermos on the spacer rows: mousesens+1 (idx 6), scrnsize+1 (idx 4).
-  M_DrawThermo(ctx, x, y + LH * 6, 10, _mouseSens,  lx, ly, sx, sy);
-  M_DrawThermo(ctx, x, y + LH * 4,  9, _screenSize, lx, ly, sx, sy);
+  // detailNames[detailLevel] (0=high,1=low) on the detail row (idx 1).
+  _drawPatchDoom(ctx, _detailLevel === 0 ? 'M_GDHIGH' : 'M_GDLOW', x + 175, y + LH * 1, lx, ly, sx, sy);
+  // msgNames[showMessages] (0=off,1=on) on the messages row (idx 0).
+  _drawPatchDoom(ctx, showMessages === true ? 'M_MSGON' : 'M_MSGOFF', x + 120, y + LH * 0, lx, ly, sx, sy);
+  // Thermos on the spacer rows: mousesens+1 (idx 5), scrnsize+1 (idx 3).
+  M_DrawThermo(ctx, x, y + LH * 5, 10, _mouseSens,  lx, ly, sx, sy);
+  M_DrawThermo(ctx, x, y + LH * 3,  9, _screenSize, lx, ly, sx, sy);
 };
 
 // m_menu.c:422-447 — SoundMenu also has spacer rows (sfx_empty1/2) holding the
@@ -240,17 +241,6 @@ function M_QuitDOOM() {
   const idx = (gametic % (QUIT_MESSAGES.length - 1)) + 1;
   M_StartMessage(QUIT_MESSAGES[idx % QUIT_MESSAGES.length] + '\n\n(Press y to quit)', (yes) => {
     if (yes && typeof window !== 'undefined') window.location.reload();
-  }, false);
-}
-
-function M_EndGame() {
-  // m_menu.c:1006 — no active game: oof and bail.
-  if (usergame !== true) { S_StartSound(null, sfx_oof); return; }
-  M_StartMessage('Are you sure you want to end the game?\n\n(Press y to quit)', (yes) => {
-    if (yes) {
-      M_ClearMenus();
-      if (typeof window !== 'undefined') window.location.reload();
-    }
   }, false);
 }
 
