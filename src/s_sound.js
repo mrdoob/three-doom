@@ -62,22 +62,66 @@ export function S_Start() {
   S_ChangeMusic(mnum, true);
 }
 
-function getFreeChannel(origin, priority) {
-  // Prefer free channel.
+// s_sound.c S_StopChannel — stop the sound on channel cnum and free the slot.
+function S_StopChannel(cnum) {
+  const c = channels[cnum];
+  if (c.sfxinfo !== null) {
+    if (c.handle !== 0 && I.I_SoundIsPlaying(c.handle)) I.I_StopSound(c.handle);
+    c.sfxinfo = null; c.origin = null; c.handle = 0;
+  }
+}
+
+// A channel is free if empty or its sound has already finished. Vanilla frees
+// finished channels in S_UpdateSounds; reaping them here too is purely additive
+// (it recovers a slot sooner, never plays a wrong sound).
+function isChannelFree(cnum) {
+  const c = channels[cnum];
+  if (c.sfxinfo === null) return true;
+  if (c.handle === 0 || !I.I_SoundIsPlaying(c.handle)) {
+    c.sfxinfo = null; c.origin = null; c.handle = 0;
+    return true;
+  }
+  return false;
+}
+
+// s_sound.c:471 S_StopSound(origin) — stop the FIRST channel sharing this origin,
+// regardless of which sfx it is (one sound per origin), then break. Used both as
+// the public stop-by-origin and as the pre-step before claiming a channel.
+function S_StopSoundOrigin(origin) {
   for (let i = 0; i < NUM_CHANNELS; i++) {
-    if (channels[i].handle === 0 || !I.I_SoundIsPlaying(channels[i].handle)) return i;
+    if (channels[i].sfxinfo !== null && channels[i].origin === origin) {
+      S_StopChannel(i);
+      break;
+    }
   }
-  // Otherwise replace lowest-priority.
-  let lowest = 0;
-  for (let i = 1; i < NUM_CHANNELS; i++) {
-    if (channels[i].sfxinfo !== null && channels[lowest].sfxinfo !== null &&
-        channels[i].sfxinfo.priority < channels[lowest].sfxinfo.priority) lowest = i;
+}
+
+// s_sound.c:827 S_getChannel — returns a channel index for {origin, sfx}, or -1
+// if none is free and nothing lower-priority can be evicted. NOTE: in Doom a
+// LOWER priority NUMBER means a MORE important sound; a new sound may only evict
+// a channel whose number is >= its own (vanilla breaks on the FIRST such
+// channel in index order — it does NOT hunt for the global minimum).
+function S_getChannel(origin, sfx) {
+  let cnum;
+  // Find an open channel (or reuse one already playing from this origin).
+  for (cnum = 0; cnum < NUM_CHANNELS; cnum++) {
+    if (isChannelFree(cnum)) break;
+    else if (origin !== null && channels[cnum].origin === origin) {
+      S_StopChannel(cnum);
+      break;
+    }
   }
-  if (channels[lowest].sfxinfo === null || channels[lowest].sfxinfo.priority <= priority) {
-    if (channels[lowest].handle !== 0) I.I_StopSound(channels[lowest].handle);
-    return lowest;
+  // None available: kick the first equally-or-less-important channel.
+  if (cnum === NUM_CHANNELS) {
+    for (cnum = 0; cnum < NUM_CHANNELS; cnum++) {
+      if (channels[cnum].sfxinfo.priority >= sfx.priority) break;
+    }
+    if (cnum === NUM_CHANNELS) return -1; // every channel is strictly more important
+    S_StopChannel(cnum);
   }
-  return -1;
+  channels[cnum].sfxinfo = sfx;
+  channels[cnum].origin  = origin;
+  return cnum;
 }
 
 // S_AdjustSoundParams — mirror vanilla. Returns null if inaudible, else
@@ -93,11 +137,8 @@ function approxDist(dx, dy) {
   return dx < dy ? dx + dy - (dx >> 1) : dx + dy - (dy >> 1);
 }
 
-// s_sound.c:559 — bit-exact stereo math. R_PointToAngle2 + finesine produces
-// the same separation curve as vanilla; Math.atan2 + Math.sin do not (the
-// double-precision path drifts by a few BAM and breaks demo determinism).
-const S_STEREO_SWING = 96 * 65536;
-
+// Stereo math is kept bit-exact: R_PointToAngle2 + finesine reproduces vanilla's
+// separation curve; Math.atan2 + Math.sin would drift by a few BAM.
 function S_AdjustSoundParams(listener, source) {
   if (listener === null || listener.mo === undefined || listener.mo === null) {
     return { vol: snd_SfxVolume * 8, sep: NORM_SEP, pitch: NORM_PITCH };
@@ -130,58 +171,79 @@ function S_AdjustSoundParams(listener, source) {
     sep = NORM_SEP;
   } else {
     // BAM separation: angle from listener to source minus listener angle.
-    // angle > ANG180 means the source is to the LEFT; vanilla subtracts so
-    // we end up sweeping sep across [NORM_SEP - SWING, NORM_SEP + SWING].
+    // Vanilla's else branch adds (0xffffffff - listener->angle), i.e. subtracts
+    // (listener->angle + 1) mod 2^32 — keep it byte-exact (no extra +1).
     let angle = R_PointToAngle2(lmo.x, lmo.y, source.x, source.y) >>> 0;
-    if (angle > lmo.angle >>> 0) angle = (angle - lmo.angle) >>> 0;
-    else                         angle = (angle + (0xffffffff - lmo.angle) + 1) >>> 0;
+    if (angle > (lmo.angle >>> 0)) angle = (angle - lmo.angle) >>> 0;
+    else                           angle = (angle + (0xffffffff - lmo.angle)) >>> 0;
     const fa = (angle >>> ANGLETOFINESHIFT) & FINEMASK;
-    sep = NORM_SEP - (((finesine[fa] * S_STEREO_SWING) >> 24) | 0);
+    // s_sound.c:793  *sep = 128 - (FixedMul(S_STEREO_SWING,finesine[angle])>>16)
+    //  with S_STEREO_SWING = 96*FRACUNIT, so the offset is (96*finesine)>>16.
+    //  96*finesine stays within int32 (96*65536 = 6291456), so a single >>16 is
+    //  exact — the old `(finesine*S_STEREO_SWING)>>24` overflowed int32 to junk.
+    sep = NORM_SEP - ((96 * finesine[fa]) >> 16);
     if (sep < 0)   sep = 0;
     if (sep > 255) sep = 255;
   }
   return { vol, sep, pitch: NORM_PITCH };
 }
 
-// sfx ids that bypass pitch perturbation — itemup and tink stay clean.
-const _SFX_ITEMUP = 32;
-const _SFX_TINK   = 33; // sfx_tink — vanilla actually fixes only itemup/tink.
+// sfx ids that bypass the wide pitch perturbation — only itemup and tink stay
+// clean. The chainsaw band (sawup..sawhit) instead gets the narrow ±8 jitter.
+const _SFX_ITEMUP = 32; // sfx_itemup
+const _SFX_TINK   = 87; // sfx_tink
+const _SFX_SAWUP  = 10; // sfx_sawup
+const _SFX_SAWHIT = 13; // sfx_sawhit
+const NORM_PRIORITY = 64;
 
-// s_sound.c:404 — S_StartSound plays sfxid at the menu's current SFX volume.
+// s_sound.c:397 — S_StartSound plays sfxid at the menu's current SFX volume.
 export function S_StartSound(origin, sfxid) {
   S_StartSoundAtVolume(origin, sfxid, snd_SfxVolume);
 }
 
-// s_sound.c:253 — S_StartSoundAtVolume. `volume` is in snd_SfxVolume units
+// s_sound.c:254 — S_StartSoundAtVolume. `volume` is in snd_SfxVolume units
 // (0..15). Positional sounds discard it and re-derive volume from distance
 // (vanilla quirk); non-positional sounds play at `volume` directly.
 export function S_StartSoundAtVolume(origin, sfxid, volume) {
+  if (origin === undefined) origin = null;
+  // s_sound.c:277 — bogus sfx # guard (vanilla I_Errors; we just bail).
   if (sfxid <= 0 || sfxid >= S_sfx.length) return;
-  let sfx = S_sfx[sfxid];
-  let priority = sfx.priority;
-  let pitch = NORM_PITCH;
+  const sfx = S_sfx[sfxid];
 
-  // s_sound.c:281 — honor sfx->link. The linked entry's priority/pitch
-  // override the originally-requested sfx and its volume biases `volume`.
-  // Used by sfx_chgun -> sfx_pistol so the chaingun fires the pistol's
-  // sample at pitch 150. The JS port also substitutes the linked sample id
-  // (the IWAD ships no standalone chaingun sample).
+  // s_sound.c:283 — honor sfx->link. The link's pitch/volume bias the request
+  // (sfx_chgun -> sfx_pistol at pitch 150). We do NOT substitute the sfx id:
+  // vanilla passes the ORIGINAL id to I_StartSound (the data alias resolves the
+  // sample), and our i_sound dspistol fallback resolves the absent DSCHGUN lump
+  // the same way — so the chaingun keeps id sfx_chgun (out of the i_sound
+  // single-instance dedup list, exactly like vanilla).
+  let pitch, priority;
   if (sfx.link !== undefined && sfx.link !== null) {
-    const linked = S_sfx[sfx.link];
-    pitch    = (sfx.pitch  !== undefined && sfx.pitch  !== 0) ? sfx.pitch  : NORM_PITCH;
+    pitch    = sfx.pitch;     // sfx_chgun: 150
+    priority = sfx.priority;  // original sfx's priority field
     volume  += (sfx.volume !== undefined) ? sfx.volume : 0;
     if (volume < 1) return;
     if (volume > snd_SfxVolume) volume = snd_SfxVolume;
-    priority = linked.priority;
-    sfxid    = sfx.link;
-    sfx      = linked;
+  } else {
+    pitch    = NORM_PITCH;
+    priority = NORM_PRIORITY;
   }
 
-  // s_sound.c:326 — pitch perturbation uses M_Random, NOT P_Random.
-  // M_Random has a separate counter from P_Random precisely so cosmetic
-  // jitter like sound pitch doesn't consume demo-deterministic RNG. Using
-  // P_Random here desyncs every demo on the first sfx played.
-  if (sfxid >= 11 /*sfx_sawup*/ && sfxid <= 14 /*sfx_sawhit*/) {
+  // s_sound.c:302 — positional sounds re-derive vol/sep from distance; an
+  // out-of-range source is dropped BEFORE any M_Random is rolled (vanilla tests
+  // audibility only on this path — s_sound.c:817 `return (*vol>0)`).
+  let vol = volume * 8, sep = NORM_SEP;
+  if (origin !== null && _listener !== null && origin !== _listener.mo) {
+    const p = S_AdjustSoundParams(_listener, origin);
+    if (p === null) return;   // out of range
+    vol = p.vol; sep = p.sep;
+    if (vol <= 0) return;
+  }
+
+  // s_sound.c:326 — pitch perturbation via M_Random (NOT P_Random: cosmetic
+  // jitter must not consume demo-deterministic RNG). The chainsaw band gets ±8;
+  // everything except itemup/tink gets ±16. Uses the ORIGINAL sfxid, so
+  // sfx_chgun (86) correctly falls in the ±16 branch like vanilla.
+  if (sfxid >= _SFX_SAWUP && sfxid <= _SFX_SAWHIT) {
     pitch = (pitch + 8 - (M_Random() & 15)) | 0;
     if (pitch < 0)   pitch = 0;
     if (pitch > 255) pitch = 255;
@@ -191,39 +253,17 @@ export function S_StartSoundAtVolume(origin, sfxid, volume) {
     if (pitch > 255) pitch = 255;
   }
 
-  let vol = volume * 8, sep = NORM_SEP;
-  if (origin !== null && origin !== undefined && _listener !== null && origin !== _listener.mo) {
-    const p = S_AdjustSoundParams(_listener, origin);
-    if (p === null) return; // out of range
-    vol = p.vol; sep = p.sep;
-  }
-  if (vol <= 0) return;
-  // s_sound.c:483 — same-origin replacement: kill any existing channel from
-  // this origin so we don't stack chainsaw-on-chainsaw etc.
-  if (origin !== null && origin !== undefined) {
-    for (let i = 0; i < NUM_CHANNELS; i++) {
-      if (channels[i].origin === origin && channels[i].sfxinfo !== null &&
-          (sfx.singularity === true || channels[i].sfxinfo === sfx)) {
-        if (channels[i].handle !== 0) I.I_StopSound(channels[i].handle);
-        channels[i].sfxinfo = null; channels[i].origin = null; channels[i].handle = 0;
-        break;
-      }
-    }
-  }
-  const ch = getFreeChannel(origin, priority);
-  if (ch === -1) return;
-  channels[ch].sfxinfo = sfx;
-  channels[ch].origin  = origin;
-  channels[ch].handle  = I.I_StartSound(sfxid, vol, sep, pitch, priority);
+  // s_sound.c:349 — kill any sound already playing from this origin (one sound
+  // per origin), then claim a channel (priority preemption is inside S_getChannel).
+  S_StopSoundOrigin(origin);
+  const cnum = S_getChannel(origin, sfx);
+  if (cnum === -1) return;
+  channels[cnum].handle = I.I_StartSound(sfxid, vol, sep, pitch, priority);
 }
 
 export function S_StopSound(origin) {
-  for (const ch of channels) {
-    if (ch.origin === origin && ch.handle !== 0) {
-      I.I_StopSound(ch.handle);
-      ch.handle = 0; ch.origin = null; ch.sfxinfo = null;
-    }
-  }
+  // s_sound.c:471 — stop the first channel from this origin, then break.
+  S_StopSoundOrigin(origin);
 }
 
 export function S_SetListener(player) { _listener = player; }

@@ -10,10 +10,15 @@
 // The 3D port draws menus via Canvas2D using the WAD's M_* patches when
 // available, falling back to a monospace font for items.
 
-import { menuactive, set_menuactive, gamestate, gamemode, demoplayback } from './doomstat.js';
+import { menuactive, set_menuactive, gamestate, gamemode, demoplayback, usergame } from './doomstat.js';
 import { GameMode_t, KEY_UPARROW, KEY_DOWNARROW, KEY_LEFTARROW, KEY_RIGHTARROW,
   KEY_BACKSPACE, KEY_ESCAPE, KEY_ENTER } from './doomdef.js';
 import { G_DeferedInitNew, G_LoadGame, G_SaveGame } from './g_game.js';
+// m_menu.c sprinkles S_StartSound through M_Responder for UI feedback: pstop on
+// cursor move, pistol on select, stnmov on slider, swtchn/swtchx on open/back/
+// close, oof on an invalid action.
+import { S_StartSound } from './s_sound.js';
+import { sfx_pstop, sfx_pistol, sfx_stnmov, sfx_swtchn, sfx_swtchx, sfx_oof } from './sounds.js';
 import { HU_ToggleMessages, showMessages } from './hu_stuff.js';
 import { D_AcquirePointerLock } from './d_keyboard.js';
 import { V_DecodePatchToCanvas, V_DrawPatchAtCanvas, V_RegisterPNGPatch } from './v_video.js';
@@ -181,6 +186,8 @@ function popMenu()   { _currentMenu = _menuStack.pop() || MAIN_MENU; _selected =
 function _moveCursor(m, delta) {
   const n = m.items.length;
   do { _selected = (_selected + delta + n) % n; } while (m.items[_selected].spacer === true);
+  // m_menu.c:1630/1640 — cursor move plays sfx_pstop.
+  S_StartSound(null, sfx_pstop);
 }
 
 function _chooseEpisode(ep) {
@@ -237,6 +244,8 @@ function M_QuitDOOM() {
 }
 
 function M_EndGame() {
+  // m_menu.c:1006 — no active game: oof and bail.
+  if (usergame !== true) { S_StartSound(null, sfx_oof); return; }
   M_StartMessage('Are you sure you want to end the game?\n\n(Press y to quit)', (yes) => {
     if (yes) {
       M_ClearMenus();
@@ -266,6 +275,11 @@ export function M_StartControlPanel() {
   _currentMenu = MAIN_MENU;
   _menuStack = [];
   _selected = 0;
+  // m_menu.c:1614 — opening the control panel plays sfx_swtchn. Placed here
+  // (rather than at each call site, as vanilla does) so every open path — ESC,
+  // a title-screen key, pointer-lock loss — gets it; callers must NOT also
+  // play swtchn themselves.
+  S_StartSound(null, sfx_swtchn);
 }
 export function M_ClearMenus() {
   set_menuactive(false);
@@ -287,12 +301,16 @@ export function M_Responder(ev) {
   const key = ev.data1;
   // Modal message handling: y/n only.
   if (_message !== null) {
-    if (key === 0x79 /*y*/ || key === 13) { _message.routine?.(true);  _message = null; return true; }
-    if (key === 0x6e /*n*/ || key === KEY_ESCAPE) { _message.routine?.(false); _message = null; return true; }
+    // m_menu.c:1507 — any dismissal of a modal message plays sfx_swtchx.
+    if (key === 0x79 /*y*/ || key === 13) { _message.routine?.(true);  _message = null; S_StartSound(null, sfx_swtchx); return true; }
+    if (key === 0x6e /*n*/ || key === KEY_ESCAPE) { _message.routine?.(false); _message = null; S_StartSound(null, sfx_swtchx); return true; }
     return true;
   }
   if (key === KEY_ESCAPE) {
-    if (menuactive === true) M_ClearMenus(); else M_StartControlPanel();
+    // m_menu.c:1683 — ESC closes the menu with sfx_swtchx; the open path
+    // (M_StartControlPanel) plays sfx_swtchn itself, m_menu.c:1614.
+    if (menuactive === true) { M_ClearMenus(); S_StartSound(null, sfx_swtchx); }
+    else M_StartControlPanel();
     return true;
   }
   if (menuactive !== true) return false;
@@ -302,25 +320,34 @@ export function M_Responder(ev) {
   if (key === KEY_DOWNARROW)  { _moveCursor(m,  1); return true; }
   if (key === KEY_LEFTARROW)  {
     const it = m.items[_selected];
-    if (it.slider === true) it.set(it.get() - 1);
+    // m_menu.c:1648 — slider left arrow plays sfx_stnmov.
+    if (it.slider === true) { S_StartSound(null, sfx_stnmov); it.set(it.get() - 1); }
     return true;
   }
   if (key === KEY_RIGHTARROW) {
     const it = m.items[_selected];
-    if (it.slider === true) it.set(it.get() + 1);
+    // m_menu.c:1657 — slider right arrow plays sfx_stnmov.
+    if (it.slider === true) { S_StartSound(null, sfx_stnmov); it.set(it.get() + 1); }
     return true;
   }
   if (key === KEY_ENTER) {
     const it = m.items[_selected];
-    // m_menu.c:1667 — ENTER on a slider (status==2) acts as the right arrow.
-    if (it.slider === true) it.set(it.get() + 1);
-    else if (it.action != null) it.action();
+    // m_menu.c:1667 — ENTER on a slider (status==2) acts as the right arrow
+    // and plays sfx_stnmov; ENTER on a normal item plays sfx_pistol.
+    if (it.slider === true) { it.set(it.get() + 1); S_StartSound(null, sfx_stnmov); }
+    else if (it.action != null) { it.action(); S_StartSound(null, sfx_pistol); }
     return true;
   }
   // doomdef.h:KEY_BACKSPACE = 127. The previous port used 0x08 (ASCII BS),
   // which never reaches us because d_keyboard sends 127 for Backspace per
   // the vanilla mapping.
-  if (key === KEY_BACKSPACE) { popMenu(); return true; }
+  if (key === KEY_BACKSPACE) {
+    // m_menu.c:1688 — sfx_swtchn only when there's a previous menu to pop to.
+    const hadPrev = _menuStack.length > 0;
+    popMenu();
+    if (hadPrev === true) S_StartSound(null, sfx_swtchn);
+    return true;
+  }
   return true;
 }
 

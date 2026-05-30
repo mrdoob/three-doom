@@ -298,6 +298,13 @@ export function P_RespawnSpecials() {
     iquetail = (iquetail + 1) & (ITEMQUESIZE - 1);
     return;
   }
+  // p_mobj.c:607-610 — spawn a teleport fog at the respawn spot and play
+  // sfx_itmbk before respawning the item itself.
+  const x = mthing.x << 16;
+  const y = mthing.y << 16;
+  const ss = R_PointInSubsector(x, y);
+  const fog = P_SpawnMobj(x, y, ss.sector.floorheight, 40 /*MT_IFOG*/);
+  if (S_StartSound_external !== null) S_StartSound_external(fog, 90 /*sfx_itmbk*/);
   if (globalThis.__P_SpawnMapThing !== undefined) {
     globalThis.__P_SpawnMapThing(mthing);
   }

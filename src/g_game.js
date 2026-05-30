@@ -294,6 +294,8 @@ export function G_InitNew(skill, episode, map) {
     }
   }
   doomstat.set_usergame(true);
+  // g_game.c:1375 — if starting a new game while paused, resume the song first.
+  if (doomstat.paused === true) S_ResumeSound();
   doomstat.set_paused(false);
   doomstat.set_demoplayback(false);
   doomstat.set_automapactive(false);

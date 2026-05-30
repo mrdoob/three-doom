@@ -7,7 +7,7 @@
 import { gameepisode, gamemap, gamemode, players, consoleplayer } from './doomstat.js';
 import { S_StartSound, S_ChangeMusic } from './s_sound.js';
 import { GameMode_t } from './doomdef.js';
-import { mus_inter, mus_dm2int } from './sounds.js';
+import { mus_inter, mus_dm2int, sfx_pistol, sfx_barexp, sfx_sgcock } from './sounds.js';
 
 const TICRATE = 35;
 
@@ -63,7 +63,6 @@ let _cntStage = 0; // 0 kills, 1 items, 2 secret, 3 time/par, 4 done
 
 const STAT_RAMP_TICS = TICRATE; // 1s per stat (vanilla varies 24..30)
 let _stageTic = 0;
-let _tickedSound = false;
 
 export function WI_Start(wbstartstruct, onDone) {
   _wbs = wbstartstruct !== null && wbstartstruct !== undefined ? wbstartstruct : {};
@@ -84,7 +83,7 @@ export function WI_Start(wbstartstruct, onDone) {
   _onDone   = onDone || (() => {});
   _phase    = Ph.StatCount; _phaseTic = 0;
   _cntKills = _cntItems = _cntSecret = _cntTime = _cntPar = 0;
-  _cntStage = 0; _stageTic = 0; _tickedSound = false;
+  _cntStage = 0; _stageTic = 0;
   _active   = true;
   // wi_stuff.c:WI_Ticker (bcnt==1) — start the intermission music.
   S_ChangeMusic(gamemode === GameMode_t.commercial ? mus_dm2int : mus_inter, true);
@@ -111,23 +110,28 @@ function WI_updateStats() {
   const tgtI = _pct(p.sitems,  _wbs.maxitems);
   const tgtS = _pct(p.ssecret, _wbs.maxsecret);
   _stageTic++;
+  // wi_stuff.c — every counting state (kills/items/secrets/time) ticks
+  // sfx_pistol once every 4 tics while still ramping (!(bcnt&3)), then fires a
+  // single sfx_barexp on completion. Vanilla has no "play once" guard.
   if (_cntStage === 0) {
     _cntKills = rampTo(tgtK, _stageTic);
-    if (_stageTic % 3 === 0 && _tickedSound === false) S_StartSound(null, 1 /*sfx_pistol*/);
-    if (_stageTic >= STAT_RAMP_TICS) { _cntKills = tgtK; _cntStage = 1; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/); }
+    if (_stageTic >= STAT_RAMP_TICS) { _cntKills = tgtK; _cntStage = 1; _stageTic = 0; S_StartSound(null, sfx_barexp); }
+    else if ((_stageTic & 3) === 0) S_StartSound(null, sfx_pistol);
   } else if (_cntStage === 1) {
     _cntItems = rampTo(tgtI, _stageTic);
-    if (_stageTic >= STAT_RAMP_TICS) { _cntItems = tgtI; _cntStage = 2; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/); }
+    if (_stageTic >= STAT_RAMP_TICS) { _cntItems = tgtI; _cntStage = 2; _stageTic = 0; S_StartSound(null, sfx_barexp); }
+    else if ((_stageTic & 3) === 0) S_StartSound(null, sfx_pistol);
   } else if (_cntStage === 2) {
     _cntSecret = rampTo(tgtS, _stageTic);
-    if (_stageTic >= STAT_RAMP_TICS) { _cntSecret = tgtS; _cntStage = 3; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/); }
+    if (_stageTic >= STAT_RAMP_TICS) { _cntSecret = tgtS; _cntStage = 3; _stageTic = 0; S_StartSound(null, sfx_barexp); }
+    else if ((_stageTic & 3) === 0) S_StartSound(null, sfx_pistol);
   } else if (_cntStage === 3) {
     _cntTime = rampTo(((p.stime / 35) | 0), _stageTic);
     _cntPar  = rampTo(_wbs.partime, _stageTic);
     if (_stageTic >= STAT_RAMP_TICS) {
       _cntTime = (p.stime / 35) | 0; _cntPar = _wbs.partime;
-      _cntStage = 4; _stageTic = 0; S_StartSound(null, 82 /*sfx_barexp*/);
-    }
+      _cntStage = 4; _stageTic = 0; S_StartSound(null, sfx_barexp);
+    } else if ((_stageTic & 3) === 0) S_StartSound(null, sfx_pistol);
   }
 }
 
@@ -150,12 +154,22 @@ export function WI_Responder(ev) {
   if (!_active) return false;
   if (ev && ev.type === 0) {
     if (_phase === Ph.StatCount) {
-      // Skip the count animation.
-      const p = _wbs.plyr[0];
-      _cntKills = p.skills; _cntItems = p.sitems; _cntSecret = p.ssecret;
-      _cntTime  = (p.stime / 35) | 0; _cntPar = _wbs.partime;
-      _cntStage = 4;
-      WI_initShowNextLoc();
+      if (_cntStage < 4) {
+        // wi_stuff.c:1335 — first press snaps all counts to final + sfx_barexp,
+        // but stays on the StatCount screen.
+        const p = _wbs.plyr[0];
+        _cntKills = _pct(p.skills, _wbs.maxkills);
+        _cntItems = _pct(p.sitems, _wbs.maxitems);
+        _cntSecret = _pct(p.ssecret, _wbs.maxsecret);
+        _cntTime  = (p.stime / 35) | 0; _cntPar = _wbs.partime;
+        _cntStage = 4; _stageTic = 0;
+        S_StartSound(null, sfx_barexp);
+      } else {
+        // wi_stuff.c:1417 — with everything shown, the next press advances
+        // to "Entering …" with sfx_sgcock.
+        S_StartSound(null, sfx_sgcock);
+        WI_initShowNextLoc();
+      }
     } else {
       _active = false; _onDone();
     }

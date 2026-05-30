@@ -468,7 +468,7 @@ function meleeAttack(actor, baseDamage, randMul, sound) {
 function zombieHitscanDamage() { return ((P_Random() % 5) + 1) * 3; }
 P_RegisterAction('A_PosAttack',    (a) => hitscanAttack(a, 1, zombieHitscanDamage, 1));
 P_RegisterAction('A_SPosAttack',   (a) => hitscanAttack(a, 3, zombieHitscanDamage, 2));
-P_RegisterAction('A_CPosAttack',   (a) => hitscanAttack(a, 1, zombieHitscanDamage, 84));
+P_RegisterAction('A_CPosAttack',   (a) => hitscanAttack(a, 1, zombieHitscanDamage, 2 /*sfx_shotgn*/)); // p_enemy.c:855 (was 84=sfx_hoof)
 
 // A_CPosRefire — keep firing unless target lost or out of sight.
 P_RegisterAction('A_CPosRefire', (actor) => {

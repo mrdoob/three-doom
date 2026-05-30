@@ -84,7 +84,9 @@ export function P_UpdateButtons() {
       if      (b.where === top)    sd.toptexture    = b.btexture;
       else if (b.where === middle) sd.midtexture    = b.btexture;
       else if (b.where === bottom) sd.bottomtexture = b.btexture;
-      if (_S !== null) _S.S_StartSound(null, 23 /*sfx_swtchn*/);
+      // p_spec.c:1151 — button-return click is positional from the switch's
+      // sector soundorg (C stores it on the button; we read it off the line).
+      if (_S !== null) _S.S_StartSound(b.line.frontsector.soundorg, 23 /*sfx_swtchn*/);
       b.line = null;
     }
   }
@@ -102,22 +104,24 @@ export function P_ChangeSwitchTexture(line, useAgain) {
   // EXIT SWITCH? (C: only special==11 uses sfx_swtchx)
   const isExit = (line.special === 11);
   const sound  = isExit ? 24 /*sfx_swtchx*/ : 23 /*sfx_swtchn*/;
-  // Find the matching switch and flip — play sound only on match.
+  // Find the matching switch and flip — play sound only on match. p_switch.c
+  // plays from buttonlist[0].soundorg (a stale-slot quirk); we use this switch's
+  // own front-sector soundorg so the click is correctly positioned at the switch.
   for (let i = 0; i < numswitches * 2; i++) {
     if (switchlist[i] === texTop) {
-      if (_S !== null) _S.S_StartSound(null, sound);
+      if (_S !== null) _S.S_StartSound(line.frontsector.soundorg, sound);
       sd.toptexture = switchlist[i ^ 1];
       if (useAgain !== 0) P_StartButton(line, top, texTop, 35);
       return;
     }
     if (switchlist[i] === texMid) {
-      if (_S !== null) _S.S_StartSound(null, sound);
+      if (_S !== null) _S.S_StartSound(line.frontsector.soundorg, sound);
       sd.midtexture = switchlist[i ^ 1];
       if (useAgain !== 0) P_StartButton(line, middle, texMid, 35);
       return;
     }
     if (switchlist[i] === texBot) {
-      if (_S !== null) _S.S_StartSound(null, sound);
+      if (_S !== null) _S.S_StartSound(line.frontsector.soundorg, sound);
       sd.bottomtexture = switchlist[i ^ 1];
       if (useAgain !== 0) P_StartButton(line, bottom, texBot, 35);
       return;

@@ -75,8 +75,14 @@ function decodeDMX(bytes) {
 function getBuffer(name) {
   let buf = _bufferCache.get(name);
   if (buf !== undefined) return buf;
-  const lumpnum = W_CheckNumForName(name);
-  if (lumpnum === -1) return null;
+  let lumpnum = W_CheckNumForName(name);
+  // i_sound.c getsfx(): the sound list isn't gamemode-aware, so a DOOM II sfx
+  // can be requested even under shareware. Rather than runtime-patching, vanilla
+  // substitutes dspistol for any missing DS* lump:
+  //   if ( W_CheckNumForName(name) == -1 ) sfxlump = W_GetNumForName("dspistol");
+  // This is also what lets linked sfx (sfx_chgun -> dspistol) resolve by id.
+  if (lumpnum === -1) lumpnum = W_CheckNumForName('DSPISTOL');
+  if (lumpnum === -1) { _bufferCache.set(name, null); return null; }
   const bytes = W_CacheLumpNum(lumpnum, 0);
   buf = decodeDMX(bytes);
   _bufferCache.set(name, buf);
@@ -132,6 +138,15 @@ export function I_ShutdownMusic() {
 // Returns a handle (used by I_StopSound to cancel).
 let _nextHandle = 1;
 const _activeSources = new Map();
+
+// i_sound.c addsfx() "Chainsaw troubles": these sfx play only one at a time,
+// deduped by sfx id across all mixer channels independent of origin —
+// sfx_pistol(1), sfx_sawup(10), sfx_sawidl(11), sfx_sawful(12), sfx_sawhit(13),
+// sfx_stnmov(22). Matters most for stnmov: many sectors can move at once but
+// only ONE moving-stone sound should play.
+// (sfx_chgun stays id 86 and is deliberately absent — not deduped, per s_sound.js.)
+const _SINGLE_INSTANCE = new Set([1, 10, 11, 12, 13, 22]);
+
 export function I_StartSound(id, vol, sep, pitch, _priority) {
   if (_sfxInfo === null) return 0;
   if (canDispatch() !== true) return 0;
@@ -140,10 +155,20 @@ export function I_StartSound(id, vol, sep, pitch, _priority) {
   const name = 'DS' + info.name.toUpperCase();
   const buf = getBuffer(name);
   if (buf === null) return 0;
+  // Chainsaw-troubles dedup: cull the existing source with the same id first.
+  if (_SINGLE_INSTANCE.has(id) === true) {
+    for (const h of _activeSources.keys()) {
+      const e = _activeSources.get(h);
+      if (e.id === id) { try { e.src.stop(); } catch (_) {} _activeSources.delete(h); break; }
+    }
+  }
   const ctx = getCtx();
   const src = ctx.createBufferSource();
   src.buffer = buf;
-  src.playbackRate.value = pitch > 0 ? pitch / 128 : 1;
+  // i_sound.c:495 maps pitch through steptable[]: pow(2,(pitch-128)/64). Vanilla's
+  // software mixer never used it, but Web Audio applies playbackRate for real, so
+  // use the exponential map (64 pitch units = one octave). pitch 128 => 1.0.
+  src.playbackRate.value = pitch > 0 ? Math.pow(2, (pitch - 128) / 64) : 1;
   const gain = ctx.createGain();
   gain.gain.value = vol / 127;
   const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
@@ -155,7 +180,7 @@ export function I_StartSound(id, vol, sep, pitch, _priority) {
   }
   src.start();
   const handle = _nextHandle++;
-  _activeSources.set(handle, { src, gain, panner });
+  _activeSources.set(handle, { src, gain, panner, id });
   src.onended = () => { _activeSources.delete(handle); };
   return handle;
 }
@@ -165,12 +190,14 @@ export function I_StopSound(handle) {
   if (entry !== undefined) { try { entry.src.stop(); } catch (_) {} _activeSources.delete(handle); }
 }
 export function I_SoundIsPlaying(handle) { return _activeSources.has(handle); }
-export function I_UpdateSoundParams(handle, vol, sep, pitch) {
+export function I_UpdateSoundParams(handle, vol, sep, _pitch) {
   const entry = _activeSources.get(handle);
   if (entry === undefined) return;
   if (entry.gain)   entry.gain.gain.value = vol / 127;
   if (entry.panner) entry.panner.pan.value = (sep - 128) / 128;
-  if (entry.src && pitch > 0) entry.src.playbackRate.value = pitch / 128;
+  // i_sound.c I_UpdateSoundParams is a no-op for pitch — a playing sound keeps
+  // the playback rate it was started with. Don't reset playbackRate here, or the
+  // per-tic re-attenuation would wipe out a sound's pitch perturbation.
 }
 
 // ---------- Music (OPL2 FM synthesis via DBOPL + GENMIDI) ----------

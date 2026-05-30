@@ -375,7 +375,9 @@ P_RegisterAction('A_Saw', (player) => {
   if (_PMap !== null) slope = _PMap.P_AimLineAttack(player.mo, angle, range);
   if (_PMap !== null) _PMap.P_LineAttack(player.mo, angle, range, slope, damage);
   if (_PMap === null || _PMap.getLinetarget() === null) {
-    if (_S !== null) _S.S_StartSound(player.mo, 14 /*sfx_sawful*/);
+    // p_pspr.c:520 — miss plays sfx_sawful (12), the chainsaw's full-rev roar.
+    // (id 14 here was sfx_rlaunc, the rocket-launcher whoosh.)
+    if (_S !== null) _S.S_StartSound(player.mo, 12 /*sfx_sawful*/);
     return;
   }
   if (_S !== null) _S.S_StartSound(player.mo, 13 /*sfx_sawhit*/);
