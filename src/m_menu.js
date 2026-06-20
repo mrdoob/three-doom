@@ -41,6 +41,13 @@ const SKULL_NAMES = ['M_SKULL1', 'M_SKULL2'];
 let _skullFrame   = 0;
 let _skullTicker  = 0;
 
+// Touch/click hit regions, rebuilt every M_Drawer. Each entry maps a
+// screen-space rectangle (overlay/client pixels) back to a menu row so a tap
+// can select it — see M_TapResponder. `_msgRects` holds the modal Yes/No
+// buttons drawn by drawMessage.
+let _itemRects = [];
+let _msgRects  = [];
+
 // Sound volumes (0..15).
 export let sfxVolume = 8;
 export let musicVolume = 8;
@@ -359,6 +366,52 @@ export function M_Responder(ev) {
   return true;
 }
 
+// Touch/click handler (no equivalent in m_menu.c — added for mobile). Given a
+// tap at (px,py) in overlay/client pixels, hit-test the rectangles recorded by
+// the last M_Drawer and act on the row, mirroring the keyboard semantics:
+//   - normal item  → select it and run its action (like ENTER, sfx_pistol)
+//   - slider        → nudge left/right depending on which half was tapped
+//                     (like LEFT/RIGHT arrow, sfx_stnmov)
+//   - empty space   → back out one level, or close at the root (like ESC)
+//   - modal prompt  → the tapped YES/NO button answers it
+// Returns true when the tap was consumed by the menu, so the caller can fall
+// through to its own handling (e.g. acquiring pointer lock) when it wasn't.
+export function M_TapResponder(px, py) {
+  if (_message !== null) {
+    for (const b of _msgRects) {
+      if (px >= b.x0 && px <= b.x1 && py >= b.y0 && py <= b.y1) {
+        _message.routine?.(b.yes);
+        _message = null;
+        S_StartSound(null, sfx_swtchx);
+        return true;
+      }
+    }
+    return true; // swallow taps anywhere over the modal, button or not
+  }
+  if (menuactive !== true) return false;
+  const m = _currentMenu;
+  if (m === null) return false;
+  for (const r of _itemRects) {
+    if (px < r.x0 || px > r.x1 || py < r.y0 || py > r.y1) continue;
+    _selected = r.i;
+    const it = m.items[r.i];
+    if (it.slider === true) {
+      // Tap left half to decrease, right half to increase — the two arrow keys
+      // in one gesture. Both play sfx_stnmov like the keyboard slider.
+      S_StartSound(null, sfx_stnmov);
+      it.set(px < (r.x0 + r.x1) * 0.5 ? it.get() - 1 : it.get() + 1);
+    } else if (it.action != null) {
+      it.action();
+      S_StartSound(null, sfx_pistol);
+    }
+    return true;
+  }
+  // Tapped outside every row — treat like ESC/Backspace: back out, or close
+  // when already at the root menu. M_Back plays sfx_swtchn when it pops.
+  if (M_Back() !== true) { M_ClearMenus(); S_StartSound(null, sfx_swtchx); }
+  return true;
+}
+
 // ---------- Drawer ----------
 const drawPatchAt = V_DrawPatchAtCanvas;
 
@@ -420,6 +473,7 @@ export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
   // before the item labels, exactly like currentMenu->routine() in M_Drawer.
   if (typeof m.draw === 'function') m.draw(overlayCtx, lx, ly, sx, sy);
   // Items.
+  _itemRects = [];
   const baseX = m.x, baseY = m.y;
   for (let i = 0; i < m.items.length; i++) {
     const it = m.items[i];
@@ -431,14 +485,23 @@ export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
     // also covers patches that aren't yet ready (e.g. M_CONT loading from a
     // PNG file) and lookups that miss the WAD.
     const p = it.patch ? getPatch(it.patch) : null;
+    overlayCtx.font = `bold ${Math.round(12 * sy)}px monospace`;
+    overlayCtx.textAlign = 'left';
     if (p !== null) {
       drawPatchAt(overlayCtx, p, ix, iy, sx, sy);
     } else if (it.label) {
       overlayCtx.fillStyle = '#cccccc';
-      overlayCtx.font = `bold ${Math.round(12 * sy)}px monospace`;
-      overlayCtx.textAlign = 'left';
       overlayCtx.fillText(it.label, ix, iy + 12 * sy);
     }
+    // Record the row's tap target (overlay/client pixels). The band spans the
+    // skull gutter on the left through the label/patch width, one LINE_HEIGHT
+    // tall so adjacent rows tile without overlapping. See M_TapResponder.
+    const rw = (p !== null) ? p.w * sx : (it.label ? overlayCtx.measureText(it.label).width : 0);
+    const x0 = ix - 36 * sx;
+    const x1 = ix + rw + 8 * sx;
+    const y0 = iy - 2 * sy;
+    const y1 = iy + (LINE_HEIGHT - 2) * sy;
+    _itemRects.push({ i, x0, y0, x1, y1 });
   }
   // Skull cursor next to the selected item.
   const cur = getPatch(SKULL_NAMES[_skullFrame]);
@@ -466,6 +529,22 @@ function drawMessage(ctx, dstX, dstY, dstW, dstH) {
   const lh = dstH * 0.045;
   const startY = dstY + dstH * 0.4 - (lines.length * lh) / 2;
   for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], dstX + dstW * 0.5, startY + i * lh);
+  // Tappable YES / NO buttons — a touch-friendly stand-in for the y/n keys the
+  // message text refers to. Their rects feed M_TapResponder's modal branch.
+  const bw = dstW * 0.16, bh = lh * 1.7, gap = dstW * 0.03;
+  const cx = dstX + dstW * 0.5;
+  const by = startY + lines.length * lh + lh * 0.6;
+  _msgRects = [];
+  const button = (label, bx, yes) => {
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = Math.max(1, dstH * 0.0025);
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, bx + bw * 0.5, by + bh * 0.5 + lh * 0.3);
+    _msgRects.push({ x0: bx, y0: by, x1: bx + bw, y1: by + bh, yes });
+  };
+  button('YES', cx - bw - gap * 0.5, true);
+  button('NO',  cx + gap * 0.5,      false);
   ctx.textAlign = 'left';
 }
 

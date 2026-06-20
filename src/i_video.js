@@ -78,8 +78,13 @@ export function I_InitGraphics() {
   // Mouse (pointer lock for FPS-style mouse look) — only acquire inside an
   // interactive level. The title screen, menu, and demo playback all keep the
   // pointer free so the user can navigate / leave without being captured.
-  renderer.domElement.addEventListener('click', () => {
+  renderer.domElement.addEventListener('click', (e) => {
     if (_doomstat === null) return;
+    // While the menu (or a modal prompt) is showing, a tap selects a row /
+    // answers the prompt. The overlay canvas is window-sized at 1:1 CSS pixels,
+    // so clientX/clientY map straight to the coords M_Drawer drew with. If the
+    // menu didn't consume the tap, fall through to the gameplay handling below.
+    if (_mMenu !== null && _mMenu.M_TapResponder(e.clientX, e.clientY)) return;
     if (_doomstat.gamestate === 0 /*GS_LEVEL*/ && _doomstat.demoplayback !== true) {
       if (document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock?.();

@@ -134,10 +134,13 @@ function installListeners() {
     });
   document.addEventListener('keyup', (e) => { keys.delete(e.code); });
   document.addEventListener('mousedown', async (e) => {
+    // While the menu is open, a click/tap belongs to the menu (M_TapResponder),
+    // not the gun — don't latch BT_ATTACK or grab pointer lock under it.
+    const ds = await import('./doomstat.js');
+    if (ds.menuactive === true) return;
     mouseButtons |= (1 << e.button);
     // Recapture pointer lock only during interactive play. Demo playback
     // shouldn't grab the cursor — the user might want to click out.
-    const ds = await import('./doomstat.js');
     if (ds.gamestate === 0 /*GS_LEVEL*/ && !ds.demoplayback &&
         document.pointerLockElement !== renderer.domElement) {
       renderer.domElement.requestPointerLock?.();
