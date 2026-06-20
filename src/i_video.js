@@ -80,11 +80,8 @@ export function I_InitGraphics() {
   // pointer free so the user can navigate / leave without being captured.
   renderer.domElement.addEventListener('click', (e) => {
     if (_doomstat === null) return;
-    // Menu open → route the tap into the menu (select an item, nudge a slider,
-    // advance a help page, or back out). Handled before the level pointer-lock
-    // grab below so tapping the menu can't get swallowed into recapturing the
-    // mouse. The overlay is inset:0 at window size, so client coords map to it
-    // directly once the bounding rect's origin is subtracted.
+    // Menu open → route the tap into the menu, before the level pointer-lock
+    // grab below so it isn't swallowed into recapturing the mouse.
     if (_doomstat.menuactive === true && _mMenu !== null) {
       const rect = overlayCanvas.getBoundingClientRect();
       _mMenu.M_HandleTap(e.clientX - rect.left, e.clientY - rect.top);

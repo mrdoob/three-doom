@@ -32,9 +32,7 @@ V_RegisterPNGPatch('M_CONT', './M_CONT.png');
 let _currentMenu = null;
 let _selected    = 0;
 let _menuStack   = [];
-// Letterbox geometry from the last M_Drawer call (origin lx/ly and scale
-// sx/sy of the 320x200 menu box inside the window). M_HandleTap needs it to
-// map a window-pixel tap back into Doom menu coords. Null until first draw.
+// Last M_Drawer letterbox geometry, used by M_HandleTap to invert a tap.
 let _lastLayout  = null;
 
 // m_menu.c:129 — LINEHEIGHT.
@@ -363,57 +361,41 @@ export function M_Responder(ev) {
   return true;
 }
 
-// Touch / pointer tap handling. Not part of vanilla Doom — added so the menu
-// is usable on mobile (and with a plain mouse). (px,py) are window pixels on
-// the overlay canvas. Returns true when the tap was consumed by the menu.
-//
-// Behavior, mapped to the keyboard model above:
-//   - tap a normal item  → move the skull there and activate it (cursor + ENTER)
-//   - tap a slider item   → nudge it down/up depending on which side of the
-//                           knob was tapped (LEFT/RIGHT arrow)
-//   - tap a help page     → advance it (any key)
-//   - tap outside the items → back out one level, closing at the root (ESC)
+// Touch/pointer tap handling for mobile. (px,py) are overlay window pixels;
+// returns true when the tap was consumed.
 export function M_HandleTap(px, py) {
   if (menuactive !== true) return false;
-  // Modal y/n prompts stay keyboard-only (a stray tap must not confirm a quit
-  // or Nightmare start). Swallow the tap so it can't fall through to the game.
+  // Modal y/n prompts stay keyboard-only so a stray tap can't confirm a quit.
   if (_message !== null) return true;
   const m = _currentMenu;
   if (m === null || _lastLayout === null) return true;
   const { lx, ly, sx, sy } = _lastLayout;
-  // Map the tap from window pixels back into Doom's 320x200 menu space.
+  // Window pixels → Doom 320x200 menu space.
   const dx = (px - lx) / sx;
   const dy = (py - ly) / sy;
-  // Fullscreen help pages advance on a tap anywhere, mirroring "any key".
+  // Help pages advance on a tap anywhere ("any key").
   if (m.fullscreen) {
     const it = m.items[0];
     if (it !== undefined && it.action != null) { it.action(); S_StartSound(null, sfx_pistol); }
     return true;
   }
-  // Which item row does the tap fall on? Each row is LINE_HEIGHT tall starting
-  // at the menu's baseY. A tap off the rows (the dimmed margin, the title) or
-  // outside the virtual screen width backs out one level — the touch-friendly
-  // stand-in for ESC/Backspace, which mobile users have no key for.
-  const baseY = m.y;
-  const row = (dx < 0 || dx > 320) ? -1 : Math.floor((dy - baseY) / LINE_HEIGHT);
+  // A tap off the rows backs out one level (closing at the root) — the
+  // touch stand-in for ESC, which mobile users have no key for.
+  const row = (dx < 0 || dx > 320) ? -1 : Math.floor((dy - m.y) / LINE_HEIGHT);
   if (row < 0 || row >= m.items.length) {
     if (M_Back() !== true) { M_ClearMenus(); S_StartSound(null, sfx_swtchx); }
     return true;
   }
   let idx = row;
   let it = m.items[idx];
-  // Spacer rows carry the thermo for the slider on the line above — redirect a
-  // tap there to that slider so the bar itself is draggable-by-tap.
+  // A slider's thermo sits on the spacer row below its label — redirect there.
   if (it.spacer === true && idx > 0 && m.items[idx - 1].slider === true) {
     idx -= 1; it = m.items[idx];
   }
   if (it.spacer === true) return true;
-  // Move the skull to the tapped row (sfx_pstop, as for an arrow-key move).
   if (idx !== _selected) { _selected = idx; S_StartSound(null, sfx_pstop); }
   if (it.slider === true) {
-    // M_DrawThermo puts the knob at doom-x (m.x + 8) + value*8; +4 centers it.
-    // Tap left of the knob lowers, right raises — one step, same as the arrow
-    // keys, so each slider's clamping/wrap behaves identically to the keyboard.
+    // Knob is at doom-x (m.x + 8) + value*8; tap left lowers, right raises.
     const knobX = m.x + 8 + it.get() * 8 + 4;
     it.set(dx < knobX ? it.get() - 1 : it.get() + 1);
     S_StartSound(null, sfx_stnmov);
@@ -467,7 +449,6 @@ export function M_Drawer(overlayCtx, dstX, dstY, dstW, dstH) {
   const sx = scale, sy = scale;
   const lx = dstX + (dstW - 320 * scale) * 0.5;
   const ly = dstY + (dstH - 200 * scale) * 0.5;
-  // Remember the geometry so M_HandleTap can invert window pixels → menu coords.
   _lastLayout = { lx, ly, sx, sy };
   // Background dim only when not over title screen.
   if (gamestate === 0 /*GS_LEVEL*/) {
