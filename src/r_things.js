@@ -225,7 +225,7 @@ export function R_RegisterMobjSprite(mobj) {
   // at (0,0,0) for newly-spawned mobjs.
   sprite.visible = false;
   _thingsGroup.add(sprite);
-  _liveSprites.push({ sprite, mobj });
+  _liveSprites.push({ sprite, mobj, _isShadow: false });
 }
 
 // info.c state.frame layout — high bit FF_FULLBRIGHT marks fullbright frames
@@ -234,10 +234,22 @@ export function R_RegisterMobjSprite(mobj) {
 const FF_FULLBRIGHT = 0x8000;
 const FF_FRAMEMASK  = 0x7fff;
 
+// MF_SHADOW (p_mobj.js) — the Spectre and the partial-invisibility powerup.
+// Vanilla draws these with fuzzcolfunc, a shimmering screen-space distortion
+// through a dark colormap. We can't run that screen-space pass yet, so we
+// approximate it with a dark, semi-transparent billboard that flickers and
+// jitters each frame (see R_UpdateSprites).
+const MF_SHADOW      = 0x40000;
+const SHADOW_TINT    = 0.12; // near-black silhouette (fuzz samples a dark colormap)
+const SHADOW_OPACITY = 0.33; // base translucency
+const SHADOW_FLICKER = 0.09; // +/- per-frame opacity shimmer
+const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
+
 export function R_UpdateSprites() {
   for (const entry of _liveSprites) {
     const mo = entry.mobj;
     if (mo === null) continue;
+    const isShadow = (mo.flags & MF_SHADOW) !== 0;
     const st = states[mo.state];
     if (st === undefined) continue;
     const sd = sprites[st.sprite];
@@ -290,26 +302,52 @@ export function R_UpdateSprites() {
     // clamp leaves them untouched.
     const floorY = mo.floorz / 65536;
     if (centerY - halfH < floorY) centerY = floorY + halfH;
+    // Fuzz shimmer: nudge the Spectre's billboard vertically each frame.
+    if (isShadow) centerY += (Math.random() - 0.5) * SHADOW_JITTER;
     entry.sprite.position.set(
       mo.x / 65536,
       centerY,
       -mo.y / 65536,
     );
-    // Sector lighting: vanilla r_things.c:R_ProjectSprite picks a colormap row
-    // from the sector's lightlevel (and distance, via spritelights[]); we
-    // approximate by tinting the sprite material with the lightlevel scaled
-    // 0..1. FF_FULLBRIGHT (projectiles, fireballs, plasma) overrides.
-    const fullbright = (st.frame & FF_FULLBRIGHT) !== 0;
-    let light = 1;
-    if (fullbright !== true && mo.subsector !== null && mo.subsector.sector !== null) {
-      light = (mo.subsector.sector.lightlevel | 0) / 255;
-      if (light < 0) light = 0; else if (light > 1) light = 1;
+    // MF_SHADOW (Spectre / partial-invisibility powerup): swap the lit opaque
+    // billboard for a dark, translucent, shimmering one. The flag can toggle at
+    // runtime (the powerup wears off), so switch material modes on change.
+    const mat = entry.sprite.material;
+    if (isShadow !== entry._isShadow) {
+      if (isShadow) {
+        mat.transparent = true;
+        mat.depthWrite = false; // translucent: don't occlude what's behind it
+        mat.color.setRGB(SHADOW_TINT, SHADOW_TINT, SHADOW_TINT);
+      } else {
+        mat.transparent = true;
+        mat.opacity = 1;
+        mat.depthWrite = true;
+        entry._lastLight = -1; // force the light tint below to re-apply
+      }
+      mat.needsUpdate = true;
+      entry._isShadow = isShadow;
     }
-    // Skip the material uniform write when the sector light is unchanged —
-    // typical for thinkers standing still in a static-light room.
-    if (entry._lastLight !== light) {
-      entry.sprite.material.color.setRGB(light, light, light);
-      entry._lastLight = light;
+
+    if (isShadow) {
+      // Per-frame flicker mimics fuzzcolfunc's shimmering static.
+      mat.opacity = SHADOW_OPACITY + (Math.random() - 0.5) * 2 * SHADOW_FLICKER;
+    } else {
+      // Sector lighting: vanilla r_things.c:R_ProjectSprite picks a colormap row
+      // from the sector's lightlevel (and distance, via spritelights[]); we
+      // approximate by tinting the sprite material with the lightlevel scaled
+      // 0..1. FF_FULLBRIGHT (projectiles, fireballs, plasma) overrides.
+      const fullbright = (st.frame & FF_FULLBRIGHT) !== 0;
+      let light = 1;
+      if (fullbright !== true && mo.subsector !== null && mo.subsector.sector !== null) {
+        light = (mo.subsector.sector.lightlevel | 0) / 255;
+        if (light < 0) light = 0; else if (light > 1) light = 1;
+      }
+      // Skip the material uniform write when the sector light is unchanged —
+      // typical for thinkers standing still in a static-light room.
+      if (entry._lastLight !== light) {
+        mat.color.setRGB(light, light, light);
+        entry._lastLight = light;
+      }
     }
     if (entry.sprite.visible === false) entry.sprite.visible = true;
   }
