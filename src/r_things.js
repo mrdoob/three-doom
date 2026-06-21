@@ -179,9 +179,9 @@ function getFlippedTexture(info) {
 
 // Flat-white version of a sprite texture: RGB forced to white, alpha (the
 // silhouette) preserved. MF_SHADOW fuzz sprites use this so the subtractive
-// blend resolves to (material.color - background) — a uniform photo-negative
-// silhouette — instead of the monster's own colours bleeding through. `flip`
-// mirrors it horizontally to match getFlippedTexture's rotations.
+// blend resolves to (background - material.color) — a uniform dark silhouette —
+// instead of the monster's own colours bleeding through. `flip` mirrors it
+// horizontally to match getFlippedTexture's rotations.
 function getSilhouetteTexture(info, flip) {
   if (flip) { if (info.silhouetteFlipped !== null) return info.silhouetteFlipped; }
   else if (info.silhouette !== null) return info.silhouette;
@@ -269,13 +269,13 @@ const FF_FRAMEMASK  = 0x7fff;
 // Vanilla draws these with fuzzcolfunc, a shimmering screen-space distortion
 // through a dark colormap. We can't run that screen-space pass yet, so we
 // approximate it with subtractive blending: rather than drawing a flat dark
-// billboard, the silhouette *subtracts* its colour from the framebuffer, so the
-// Spectre reads as a shimmering black-and-white distortion of whatever is behind
-// it. With SubtractEquation and One/One factors the blend resolves to
-//   result = srcColour - dstColour
-// and a near-white srcColour yields ~(1 - background), i.e. a photo-negative
-// silhouette. The colour (subtraction strength) flickers and the billboard
-// jitters each frame (see R_UpdateSprites).
+// billboard, the silhouette *darkens* the framebuffer where it covers, so the
+// Spectre reads as a shimmering dark distortion of whatever is behind it. With
+// ReverseSubtractEquation and One/One factors the blend resolves to
+//   result = dstColour - srcColour
+// so a near-white srcColour subtracts most of the background (~background - 0.9),
+// leaving a near-black silhouette. The colour (subtraction strength) flickers
+// and the billboard jitters each frame (see R_UpdateSprites).
 const SHADOW_FUZZ    = 0.9;  // base subtraction strength (0..1 grey srcColour)
 const SHADOW_FLICKER = 0.1;  // +/- per-frame shimmer on the fuzz strength
 const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
@@ -298,10 +298,10 @@ function setSpriteOpaqueMode(mat) {
   mat.alphaTest = SPRITE_ALPHATEST; // keep solid texels, drop the surround
 }
 function setSpriteShadowMode(mat) {
-  // Subtractive blend (see SHADOW_FUZZ comment): the silhouette subtracts its
-  // colour from the framebuffer instead of overwriting it.
+  // Subtractive blend (see SHADOW_FUZZ comment): the silhouette darkens the
+  // framebuffer where it covers instead of overwriting it.
   mat.blending = THREE.CustomBlending;
-  mat.blendEquation = THREE.SubtractEquation; // result = src - dst
+  mat.blendEquation = THREE.ReverseSubtractEquation; // result = dst - src
   mat.blendSrc = THREE.OneFactor;
   mat.blendDst = THREE.OneFactor;
   mat.depthWrite = false; // translucent: don't occlude what's behind it
