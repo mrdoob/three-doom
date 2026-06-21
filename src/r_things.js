@@ -315,11 +315,9 @@ export function R_UpdateSprites() {
     const mat = entry.sprite.material;
     if (isShadow !== entry._isShadow) {
       if (isShadow) {
-        mat.transparent = true;
         mat.depthWrite = false; // translucent: don't occlude what's behind it
         mat.color.setRGB(SHADOW_TINT, SHADOW_TINT, SHADOW_TINT);
       } else {
-        mat.transparent = true;
         mat.opacity = 1;
         mat.depthWrite = true;
         entry._lastLight = -1; // force the light tint below to re-apply
