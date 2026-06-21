@@ -240,10 +240,16 @@ const FF_FRAMEMASK  = 0x7fff;
 // approximate it with a dark, semi-transparent billboard that flickers and
 // jitters each frame (see R_UpdateSprites).
 const MF_SHADOW      = 0x40000;
-const SHADOW_TINT    = 0.12; // near-black silhouette (fuzz samples a dark colormap)
-const SHADOW_OPACITY = 0.33; // base translucency
-const SHADOW_FLICKER = 0.09; // +/- per-frame opacity shimmer
-const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
+// With normal alpha blending a near-black tint acts as a darken/multiply: the
+// silhouette comes out at background*(1-opacity), so a high opacity carves a
+// clearly visible dark hole in the shape of the Demon (closer to vanilla's
+// fuzz, which darkens the background through colormap row 6). A literal
+// MultiplyBlending would misread our alpha-keyed sprite textures, so we stay
+// on normal blending and drive the darkness with tint+opacity instead.
+const SHADOW_TINT    = 0.0;  // black silhouette
+const SHADOW_OPACITY = 0.7;  // base darkening strength (1 = fully black)
+const SHADOW_FLICKER = 0.15; // +/- per-frame opacity shimmer
+const SHADOW_JITTER  = 2.0;  // vertical position shimmer, in map units
 
 export function R_UpdateSprites() {
   for (const entry of _liveSprites) {
