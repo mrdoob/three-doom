@@ -148,7 +148,10 @@ function buildSpriteTexture(spriteLumpIndex) {
     }
   }
   const tex = makeSpriteDataTexture(rgba, w, h);
-  const info = { tex, texFlipped: null, w, h, offsetX: p.leftoffset, offsetY: p.topoffset };
+  const info = {
+    tex, texFlipped: null, silhouette: null, silhouetteFlipped: null,
+    w, h, offsetX: p.leftoffset, offsetY: p.topoffset,
+  };
   _spriteTextureCache.set(spriteLumpIndex, info);
   return info;
 }
@@ -174,6 +177,30 @@ function getFlippedTexture(info) {
   return tex;
 }
 
+// Flat-white version of a sprite texture: RGB forced to white, alpha (the
+// silhouette) preserved. MF_SHADOW fuzz sprites use this so the subtractive
+// blend resolves to (material.color - background) — a uniform photo-negative
+// silhouette — instead of the monster's own colours bleeding through. `flip`
+// mirrors it horizontally to match getFlippedTexture's rotations.
+function getSilhouetteTexture(info, flip) {
+  if (flip) { if (info.silhouetteFlipped !== null) return info.silhouetteFlipped; }
+  else if (info.silhouette !== null) return info.silhouette;
+  const w = info.w, h = info.h;
+  const src = info.tex.image.data;
+  const dst = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const sx = flip ? (w - 1 - x) : x;
+      const d = (y * w + x) * 4;
+      dst[d] = 255; dst[d + 1] = 255; dst[d + 2] = 255;
+      dst[d + 3] = src[(y * w + sx) * 4 + 3];
+    }
+  }
+  const tex = makeSpriteDataTexture(dst, w, h);
+  if (flip) info.silhouetteFlipped = tex; else info.silhouette = tex;
+  return tex;
+}
+
 // Dispose every cached sprite texture and drop the cache. Called from
 // R_NewMap before the level group is torn down, since wall/sprite materials
 // (in the old level) still reference these textures and would leak otherwise.
@@ -181,6 +208,8 @@ export function R_ClearSpriteCache() {
   for (const entry of _spriteTextureCache.values()) {
     entry.tex.dispose();
     if (entry.texFlipped !== null) entry.texFlipped.dispose();
+    if (entry.silhouette !== null) entry.silhouette.dispose();
+    if (entry.silhouetteFlipped !== null) entry.silhouetteFlipped.dispose();
   }
   _spriteTextureCache.clear();
 }
@@ -315,7 +344,11 @@ export function R_UpdateSprites() {
     }
     if (lumpIdx < 0) continue;
     const t = buildSpriteTexture(lumpIdx);
-    const tex = flipped === 1 ? getFlippedTexture(t) : t.tex;
+    // MF_SHADOW fuzz sprites sample a flat-white silhouette (alpha only) so the
+    // subtractive blend doesn't tint with the monster's own colours.
+    const tex = isShadow
+      ? getSilhouetteTexture(t, flipped === 1)
+      : (flipped === 1 ? getFlippedTexture(t) : t.tex);
     if (entry.sprite.material.map !== tex) {
       entry.sprite.material.map = tex;
       entry.sprite.material.needsUpdate = true;
