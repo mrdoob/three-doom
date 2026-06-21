@@ -16,6 +16,7 @@ import { I_Error } from './i_system.js';
 import { FRACBITS } from './m_fixed.js';
 import { patch_t } from './v_video.js';
 import { R_PointToAngle2 } from './r_bsp.js';
+import { MF_SHADOW } from './p_mobj.js';
 
 // ---------- Sprite definition tables ----------
 export let numsprites = 0;
@@ -219,7 +220,8 @@ export function R_RegisterMobjSprite(mobj) {
   // Bare sprite — texture/scale/position set on first R_UpdateSprites pass.
   // We use a placeholder material so the sprite is valid even before the
   // first update; R_UpdateSprites overwrites .map immediately.
-  const mat = new THREE.SpriteMaterial({ transparent: true, alphaTest: SPRITE_ALPHATEST, depthWrite: true });
+  const mat = new THREE.SpriteMaterial({ transparent: true });
+  setSpriteOpaqueMode(mat);
   const sprite = new THREE.Sprite(mat);
   // Hide until R_UpdateSprites positions it — avoids a single-frame flash
   // at (0,0,0) for newly-spawned mobjs.
@@ -245,7 +247,6 @@ const FF_FRAMEMASK  = 0x7fff;
 // and a near-white srcColour yields ~(1 - background), i.e. a photo-negative
 // silhouette. The colour (subtraction strength) flickers and the billboard
 // jitters each frame (see R_UpdateSprites).
-const MF_SHADOW      = 0x40000;
 const SHADOW_FUZZ    = 0.9;  // base subtraction strength (0..1 grey srcColour)
 const SHADOW_FLICKER = 0.1;  // +/- per-frame shimmer on the fuzz strength
 const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
@@ -255,9 +256,29 @@ const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
 // is still discarded.
 const SHADOW_ALPHATEST = 0.1;
 // Default cutout for fully opaque sprites: keep solid texels, drop the
-// transparent surround. Shared by the material constructor and the shadow
-// restore path so they can't drift apart.
+// transparent surround.
 const SPRITE_ALPHATEST = 0.5;
+
+// The two sprite render modes. Both the initial material (R_RegisterMobjSprite)
+// and the runtime MF_SHADOW toggle (R_UpdateSprites) route through these so the
+// opaque defaults and the fuzz blend state can't drift apart.
+function setSpriteOpaqueMode(mat) {
+  mat.blending = THREE.NormalBlending; // default sprite blend
+  mat.depthWrite = true;
+  mat.opacity = 1;
+  mat.alphaTest = SPRITE_ALPHATEST; // keep solid texels, drop the surround
+}
+function setSpriteShadowMode(mat) {
+  // Subtractive blend (see SHADOW_FUZZ comment): the silhouette subtracts its
+  // colour from the framebuffer instead of overwriting it.
+  mat.blending = THREE.CustomBlending;
+  mat.blendEquation = THREE.SubtractEquation; // result = src - dst
+  mat.blendSrc = THREE.OneFactor;
+  mat.blendDst = THREE.OneFactor;
+  mat.depthWrite = false; // translucent: don't occlude what's behind it
+  mat.opacity = 1; // darkening comes from the blend, not from translucency
+  mat.alphaTest = SHADOW_ALPHATEST;
+}
 
 export function R_UpdateSprites() {
   for (const entry of _liveSprites) {
@@ -329,20 +350,9 @@ export function R_UpdateSprites() {
     const mat = entry.sprite.material;
     if (isShadow !== entry._isShadow) {
       if (isShadow) {
-        mat.depthWrite = false; // translucent: don't occlude what's behind it
-        // Subtractive blend (see SHADOW_FUZZ comment): the silhouette subtracts
-        // its colour from the framebuffer instead of overwriting it.
-        mat.blending = THREE.CustomBlending;
-        mat.blendEquation = THREE.SubtractEquation; // result = src - dst
-        mat.blendSrc = THREE.OneFactor;
-        mat.blendDst = THREE.OneFactor;
-        mat.opacity = 1; // darkening comes from the blend, not from translucency
-        mat.alphaTest = SHADOW_ALPHATEST;
+        setSpriteShadowMode(mat);
       } else {
-        mat.opacity = 1;
-        mat.depthWrite = true;
-        mat.blending = THREE.NormalBlending; // restore the default sprite blend
-        mat.alphaTest = SPRITE_ALPHATEST; // restore the opaque-sprite cutout
+        setSpriteOpaqueMode(mat);
         entry._lastLight = -1; // force the light tint below to re-apply
       }
       mat.needsUpdate = true;
