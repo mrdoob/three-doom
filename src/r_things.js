@@ -237,15 +237,22 @@ const FF_FRAMEMASK  = 0x7fff;
 // MF_SHADOW (p_mobj.js) — the Spectre and the partial-invisibility powerup.
 // Vanilla draws these with fuzzcolfunc, a shimmering screen-space distortion
 // through a dark colormap. We can't run that screen-space pass yet, so we
-// approximate it with a dark, semi-transparent billboard that flickers and
+// approximate it with subtractive blending: rather than drawing a flat dark
+// billboard, the silhouette *subtracts* its colour from the framebuffer, so the
+// Spectre reads as a shimmering black-and-white distortion of whatever is behind
+// it. With SubtractEquation and One/One factors the blend resolves to
+//   result = srcColour - dstColour
+// and a near-white srcColour yields ~(1 - background), i.e. a photo-negative
+// silhouette. The colour (subtraction strength) flickers and the billboard
 // jitters each frame (see R_UpdateSprites).
 const MF_SHADOW      = 0x40000;
-const SHADOW_TINT    = 0.12; // near-black silhouette (fuzz samples a dark colormap)
-const SHADOW_OPACITY = 0.33; // base translucency
-const SHADOW_FLICKER = 0.09; // +/- per-frame opacity shimmer
+const SHADOW_FUZZ    = 0.9;  // base subtraction strength (0..1 grey srcColour)
+const SHADOW_FLICKER = 0.1;  // +/- per-frame shimmer on the fuzz strength
 const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
-// Below the opacity floor (SHADOW_OPACITY - SHADOW_FLICKER = 0.24) so silhouette
-// texels pass, above 0 so the transparent surround is still discarded.
+// Opacity stays at 1 for MF_SHADOW (the darkening comes from the blend, not from
+// translucency), so silhouette texels keep full alpha. Use a low cutout so the
+// soft antialiased fuzz edges survive while the transparent surround (alpha 0)
+// is still discarded.
 const SHADOW_ALPHATEST = 0.1;
 // Default cutout for fully opaque sprites: keep solid texels, drop the
 // transparent surround. Shared by the material constructor and the shadow
@@ -317,22 +324,24 @@ export function R_UpdateSprites() {
       -mo.y / 65536,
     );
     // MF_SHADOW (Spectre / partial-invisibility powerup): swap the lit opaque
-    // billboard for a dark, translucent, shimmering one. The flag can toggle at
+    // billboard for a subtractive, shimmering one. The flag can toggle at
     // runtime (the powerup wears off), so switch material modes on change.
     const mat = entry.sprite.material;
     if (isShadow !== entry._isShadow) {
       if (isShadow) {
         mat.depthWrite = false; // translucent: don't occlude what's behind it
-        mat.color.setRGB(SHADOW_TINT, SHADOW_TINT, SHADOW_TINT);
-        // The default alphaTest (0.5) compares against texAlpha * opacity. At
-        // SHADOW_OPACITY (~0.33) every silhouette texel falls under 0.5 and gets
-        // discarded — the Spectre vanishes entirely. Drop the threshold below the
-        // flickering opacity floor so the silhouette survives, while the fully
-        // transparent surround (alpha 0) is still culled.
+        // Subtractive blend (see SHADOW_FUZZ comment): the silhouette subtracts
+        // its colour from the framebuffer instead of overwriting it.
+        mat.blending = THREE.CustomBlending;
+        mat.blendEquation = THREE.SubtractEquation; // result = src - dst
+        mat.blendSrc = THREE.OneFactor;
+        mat.blendDst = THREE.OneFactor;
+        mat.opacity = 1; // darkening comes from the blend, not from translucency
         mat.alphaTest = SHADOW_ALPHATEST;
       } else {
         mat.opacity = 1;
         mat.depthWrite = true;
+        mat.blending = THREE.NormalBlending; // restore the default sprite blend
         mat.alphaTest = SPRITE_ALPHATEST; // restore the opaque-sprite cutout
         entry._lastLight = -1; // force the light tint below to re-apply
       }
@@ -341,8 +350,10 @@ export function R_UpdateSprites() {
     }
 
     if (isShadow) {
-      // Per-frame flicker mimics fuzzcolfunc's shimmering static.
-      mat.opacity = SHADOW_OPACITY + (Math.random() - 0.5) * 2 * SHADOW_FLICKER;
+      // Flicker the subtraction strength (src grey level) to mimic fuzzcolfunc's
+      // shimmering static. A near-white src subtracts most of the background.
+      const f = SHADOW_FUZZ + (Math.random() - 0.5) * 2 * SHADOW_FLICKER;
+      mat.color.setRGB(f, f, f);
     } else {
       // Sector lighting: vanilla r_things.c:R_ProjectSprite picks a colormap row
       // from the sector's lightlevel (and distance, via spritelights[]); we
