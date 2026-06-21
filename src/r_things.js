@@ -183,8 +183,8 @@ function getFlippedTexture(info) {
 // instead of the monster's own colours bleeding through. `flip` mirrors it
 // horizontally to match getFlippedTexture's rotations.
 function getSilhouetteTexture(info, flip) {
-  if (flip) { if (info.silhouetteFlipped !== null) return info.silhouetteFlipped; }
-  else if (info.silhouette !== null) return info.silhouette;
+  const slot = flip ? 'silhouetteFlipped' : 'silhouette';
+  if (info[slot] !== null) return info[slot];
   const w = info.w, h = info.h;
   const src = info.tex.image.data;
   const dst = new Uint8Array(w * h * 4);
@@ -197,7 +197,7 @@ function getSilhouetteTexture(info, flip) {
     }
   }
   const tex = makeSpriteDataTexture(dst, w, h);
-  if (flip) info.silhouetteFlipped = tex; else info.silhouette = tex;
+  info[slot] = tex;
   return tex;
 }
 
