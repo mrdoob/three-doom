@@ -273,10 +273,11 @@ const FF_FRAMEMASK  = 0x7fff;
 // Spectre reads as a shimmering dark distortion of whatever is behind it. With
 // ReverseSubtractEquation and One/One factors the blend resolves to
 //   result = dstColour - srcColour
-// so a near-white srcColour subtracts most of the background (~background - 0.9),
-// leaving a near-black silhouette. The colour (subtraction strength) flickers
-// and the billboard jitters each frame (see R_UpdateSprites).
-const SHADOW_FUZZ    = 0.9;  // base subtraction strength (0..1 grey srcColour)
+// so the silhouette subtracts a fixed amount from the background (~background -
+// SHADOW_FUZZ), darkening it into a translucent shimmer rather than a solid
+// black cutout. The colour (subtraction strength) flickers and the billboard
+// jitters each frame (see R_UpdateSprites).
+const SHADOW_FUZZ    = 0.4;  // base subtraction strength (0..1 grey srcColour)
 const SHADOW_FLICKER = 0.1;  // +/- per-frame shimmer on the fuzz strength
 const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
 // Opacity stays at 1 for MF_SHADOW (the darkening comes from the blend, not from
