@@ -267,18 +267,19 @@ const FF_FRAMEMASK  = 0x7fff;
 
 // MF_SHADOW (p_mobj.js) — the Spectre and the partial-invisibility powerup.
 // Vanilla draws these with fuzzcolfunc, a shimmering screen-space distortion
-// through a dark colormap. We can't run that screen-space pass yet, so we
-// approximate it with subtractive blending: rather than drawing a flat dark
-// billboard, the silhouette *darkens* the framebuffer where it covers, so the
-// Spectre reads as a shimmering dark distortion of whatever is behind it. With
-// ReverseSubtractEquation and One/One factors the blend resolves to
-//   result = dstColour - srcColour
-// so the silhouette subtracts a fixed amount from the background (~background -
-// SHADOW_FUZZ), darkening it into a translucent shimmer rather than a solid
-// black cutout. The colour (subtraction strength) flickers and the billboard
-// jitters each frame (see R_UpdateSprites).
-const SHADOW_FUZZ    = 0.4;  // base subtraction strength (0..1 grey srcColour)
-const SHADOW_FLICKER = 0.1;  // +/- per-frame shimmer on the fuzz strength
+// through a dark colormap (~half brightness). We can't run that screen-space
+// pass yet, so we approximate it with *multiplicative* blending: rather than
+// drawing a flat dark billboard, the silhouette scales the framebuffer it
+// covers toward black. With MultiplyBlending the blend resolves to
+//   result = dstColour * srcColour
+// so a grey srcColour darkens the background *proportionally* (background *
+// SHADOW_FUZZ). Unlike a subtractive blend — which removes a fixed amount and
+// so crushes Doom's already-dark scenery to a solid black blob — multiply keeps
+// dark areas visible and never goes blacker than the background itself. The
+// colour (darkening factor) flickers and the billboard jitters each frame (see
+// R_UpdateSprites).
+const SHADOW_FUZZ    = 0.5;  // brightness multiplier (0 = black, 1 = unchanged)
+const SHADOW_FLICKER = 0.12; // +/- per-frame shimmer on the darkening factor
 const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
 // Opacity stays at 1 for MF_SHADOW (the darkening comes from the blend, not from
 // translucency), so silhouette texels keep full alpha. Use a low cutout so the
@@ -299,12 +300,11 @@ function setSpriteOpaqueMode(mat) {
   mat.alphaTest = SPRITE_ALPHATEST; // keep solid texels, drop the surround
 }
 function setSpriteShadowMode(mat) {
-  // Subtractive blend (see SHADOW_FUZZ comment): the silhouette darkens the
-  // framebuffer where it covers instead of overwriting it.
-  mat.blending = THREE.CustomBlending;
-  mat.blendEquation = THREE.ReverseSubtractEquation; // result = dst - src
-  mat.blendSrc = THREE.OneFactor;
-  mat.blendDst = THREE.OneFactor;
+  // Multiplicative blend (see SHADOW_FUZZ comment): the silhouette scales the
+  // framebuffer it covers (result = dst * src) instead of overwriting it.
+  // alphaTest discards the transparent surround first, so only the silhouette
+  // texels darken the background.
+  mat.blending = THREE.MultiplyBlending;
   mat.depthWrite = false; // translucent: don't occlude what's behind it
   mat.opacity = 1; // darkening comes from the blend, not from translucency
   mat.alphaTest = SHADOW_ALPHATEST;
@@ -394,8 +394,8 @@ export function R_UpdateSprites() {
     }
 
     if (isShadow) {
-      // Flicker the subtraction strength (src grey level) to mimic fuzzcolfunc's
-      // shimmering static. A near-white src subtracts most of the background.
+      // Flicker the darkening factor (src grey level) to mimic fuzzcolfunc's
+      // shimmering static — the background is multiplied by this each frame.
       const f = SHADOW_FUZZ + (Math.random() - 0.5) * 2 * SHADOW_FLICKER;
       mat.color.setRGB(f, f, f);
     } else {
