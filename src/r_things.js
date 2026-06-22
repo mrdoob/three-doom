@@ -177,11 +177,9 @@ function getFlippedTexture(info) {
   return tex;
 }
 
-// Flat-white version of a sprite texture: RGB forced to white, alpha (the
-// silhouette) preserved. MF_SHADOW fuzz sprites use this so the subtractive
-// blend resolves to (background - material.color) — a uniform dark silhouette —
-// instead of the monster's own colours bleeding through. `flip` mirrors it
-// horizontally to match getFlippedTexture's rotations.
+// White copy of a sprite (RGB forced white, alpha kept). MF_SHADOW fuzz sprites
+// use it so the blend darkens by a flat grey instead of the monster's colours.
+// `flip` mirrors horizontally, like getFlippedTexture.
 function getSilhouetteTexture(info, flip) {
   const slot = flip ? 'silhouetteFlipped' : 'silhouette';
   if (info[slot] !== null) return info[slot];
@@ -265,48 +263,34 @@ export function R_RegisterMobjSprite(mobj) {
 const FF_FULLBRIGHT = 0x8000;
 const FF_FRAMEMASK  = 0x7fff;
 
-// MF_SHADOW (p_mobj.js) — the Spectre and the partial-invisibility powerup.
-// Vanilla draws these with fuzzcolfunc, a shimmering screen-space distortion
-// through a dark colormap (~half brightness). We can't run that screen-space
-// pass yet, so we approximate it with *multiplicative* blending: rather than
-// drawing a flat dark billboard, the silhouette scales the framebuffer it
-// covers toward black. With MultiplyBlending the blend resolves to
-//   result = dstColour * srcColour
-// so a grey srcColour darkens the background *proportionally* (background *
-// SHADOW_FUZZ). Unlike a subtractive blend — which removes a fixed amount and
-// so crushes Doom's already-dark scenery to a solid black blob — multiply keeps
-// dark areas visible and never goes blacker than the background itself. The
-// colour (darkening factor) flickers and the billboard jitters each frame (see
-// R_UpdateSprites).
+// MF_SHADOW (the Spectre / partial-invisibility powerup) — vanilla's fuzz is a
+// screen-space distortion through a ~half-brightness colormap. We approximate it
+// with MultiplyBlending: the silhouette scales the background (dst * src) by a
+// grey srcColour, darkening proportionally. (A subtractive blend removes a fixed
+// amount and crushes Doom's dark scenery to a black blob.) The factor flickers
+// and the billboard jitters each frame (see R_UpdateSprites).
 const SHADOW_FUZZ    = 0.5;  // brightness multiplier (0 = black, 1 = unchanged)
 const SHADOW_FLICKER = 0.12; // +/- per-frame shimmer on the darkening factor
 const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
-// Opacity stays at 1 for MF_SHADOW (the darkening comes from the blend, not from
-// translucency), so silhouette texels keep full alpha. Use a low cutout so the
-// soft antialiased fuzz edges survive while the transparent surround (alpha 0)
-// is still discarded.
+// Low cutout so soft fuzz edges survive while the transparent surround drops.
 const SHADOW_ALPHATEST = 0.1;
-// Default cutout for fully opaque sprites: keep solid texels, drop the
-// transparent surround.
+// Opaque-sprite cutout: keep solid texels, drop the transparent surround.
 const SPRITE_ALPHATEST = 0.5;
 
-// The two sprite render modes. Both the initial material (R_RegisterMobjSprite)
-// and the runtime MF_SHADOW toggle (R_UpdateSprites) route through these so the
-// opaque defaults and the fuzz blend state can't drift apart.
+// The two sprite render modes. The initial material and the runtime MF_SHADOW
+// toggle both route through these so opaque and fuzz state can't drift apart.
 function setSpriteOpaqueMode(mat) {
-  mat.blending = THREE.NormalBlending; // default sprite blend
+  mat.blending = THREE.NormalBlending;
   mat.depthWrite = true;
   mat.opacity = 1;
-  mat.alphaTest = SPRITE_ALPHATEST; // keep solid texels, drop the surround
+  mat.alphaTest = SPRITE_ALPHATEST;
 }
 function setSpriteShadowMode(mat) {
-  // Multiplicative blend (see SHADOW_FUZZ comment): the silhouette scales the
-  // framebuffer it covers (result = dst * src) instead of overwriting it.
-  // alphaTest discards the transparent surround first, so only the silhouette
-  // texels darken the background.
+  // Multiply blend (see SHADOW_FUZZ): silhouette scales the background, alphaTest
+  // drops the surround first so only the silhouette darkens it.
   mat.blending = THREE.MultiplyBlending;
-  mat.depthWrite = false; // translucent: don't occlude what's behind it
-  mat.opacity = 1; // darkening comes from the blend, not from translucency
+  mat.depthWrite = false; // don't occlude what's behind it
+  mat.opacity = 1; // darkening is from the blend, not translucency
   mat.alphaTest = SHADOW_ALPHATEST;
 }
 
@@ -345,8 +329,8 @@ export function R_UpdateSprites() {
     }
     if (lumpIdx < 0) continue;
     const t = buildSpriteTexture(lumpIdx);
-    // MF_SHADOW fuzz sprites sample a flat-white silhouette (alpha only) so the
-    // subtractive blend doesn't tint with the monster's own colours.
+    // Fuzz sprites use a white silhouette so the blend can't tint with the
+    // monster's own colours.
     const tex = isShadow
       ? getSilhouetteTexture(t, flipped === 1)
       : (flipped === 1 ? getFlippedTexture(t) : t.tex);
@@ -378,9 +362,7 @@ export function R_UpdateSprites() {
       centerY,
       -mo.y / 65536,
     );
-    // MF_SHADOW (Spectre / partial-invisibility powerup): swap the lit opaque
-    // billboard for a subtractive, shimmering one. The flag can toggle at
-    // runtime (the powerup wears off), so switch material modes on change.
+    // Swap material modes when MF_SHADOW toggles (the powerup wears off).
     const mat = entry.sprite.material;
     if (isShadow !== entry._isShadow) {
       if (isShadow) {
@@ -394,8 +376,7 @@ export function R_UpdateSprites() {
     }
 
     if (isShadow) {
-      // Flicker the darkening factor (src grey level) to mimic fuzzcolfunc's
-      // shimmering static — the background is multiplied by this each frame.
+      // Flicker the darkening factor each frame for fuzzcolfunc's static.
       const f = SHADOW_FUZZ + (Math.random() - 0.5) * 2 * SHADOW_FLICKER;
       mat.color.setRGB(f, f, f);
     } else {
