@@ -1,6 +1,8 @@
 // Ported from: linuxdoom-1.10/r_bsp.c (R_Subsector) + r_plane.c.
 // Floors/ceilings built per subsector: clip a map-bound quad by each leaf's BSP
-// partition half-planes (root → leaf) to recover its convex polygon.
+// partition half-planes (root → leaf), then by the leaf's directed segs. BSP
+// partitions extend through void; the seg pass trims the convex cell back to
+// the actual sector boundary that Doom exposes through portals.
 
 import * as THREE from 'three';
 import {
@@ -142,7 +144,8 @@ export function R_BuildPlanes(scene, skyMaterials = null) {
     }
   }
 
-  // Map-bound quad seed (CCW); outer walls are partition lines, so it never leaks.
+  // Map-bound quad seed (CCW). Ancestor partitions recover the convex BSP
+  // cell; the directed-seg pass below trims perimeter cells away from void.
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (let i = 0; i < vertexes.length; i++) {
     const vx = vertexes[i].x / 65536, vy = vertexes[i].y / 65536;
@@ -178,6 +181,24 @@ export function R_BuildPlanes(scene, skyMaterials = null) {
       }
       poly = cleanPoly(poly);
     }
+    // A BSP leaf is a convex partition cell, not necessarily a closed sector
+    // polygon. In particular, leaves along the map perimeter remain open all
+    // the way to the padded seed bounds. Every seg is directed so its owning
+    // front sector lies on side 0 (the right / negative-cross-product side).
+    // Intersecting those half-planes removes phantom floors and ceilings from
+    // void space while retaining ordinary two-sided portal openings.
+    for (let i = 0; i < sub.numlines && poly.length >= 3; i++) {
+      const sg = segs[sub.firstline + i];
+      poly = clipPolyByHalfplane(
+        poly,
+        sg.v1.x / 65536,
+        sg.v1.y / 65536,
+        (sg.v2.x - sg.v1.x) / 65536,
+        (sg.v2.y - sg.v1.y) / 65536,
+        true,
+      );
+    }
+    poly = cleanPoly(poly);
     if (poly === null || poly.length < 3) continue;
     // Keep CCW so the floor fan faces +Y.
     if (polySignedArea(poly) < 0) poly.reverse();
