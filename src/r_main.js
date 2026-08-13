@@ -22,11 +22,13 @@ import { R_SetViewLighting } from './r_shader.js';
 import { segs } from './p_setup.js';
 import { ML_MAPPED } from './doomdata.js';
 import { R_GetViewSize } from './r_view.js';
+import { R_CreateSpriteDepthPass } from './r_sprite_depth.js';
 
 let _levelRoot = null;
 
 function disposeLevelRoot() {
   if (_levelRoot === null) {
+    if (scene !== null) delete scene.userData.doomSpriteDepthPass;
     R_ShutdownSky();
     R_ShutdownThings();
     R_ShutdownWalls();
@@ -35,7 +37,10 @@ function disposeLevelRoot() {
     return 0;
   }
   const skyMaterials = R_ShutdownSky();
-  if (scene !== null) scene.remove(_levelRoot);
+  if (scene !== null) {
+    delete scene.userData.doomSpriteDepthPass;
+    scene.remove(_levelRoot);
+  }
   const disposedGeometries = new Set();
   const disposedMaterials = new Set();
   for (const material of skyMaterials) disposedMaterials.add(material);
@@ -89,9 +94,10 @@ export function R_NewMap() {
   _levelRoot.name = 'level';
   scene.add(_levelRoot);
   const skyMaterials = R_BuildSky();
-  R_BuildWalls(_levelRoot);
+  const walls = R_BuildWalls(_levelRoot);
   R_BuildPlanes(_levelRoot, skyMaterials);
-  R_BuildSpriteBillboards(_levelRoot);
+  const things = R_BuildSpriteBillboards(_levelRoot);
+  scene.userData.doomSpriteDepthPass = R_CreateSpriteDepthPass(things, walls);
   // Bind each current billboard to an already-decoded texture, then upload
   // level-owned clones (notably the sky) and compile shader programs. Later
   // animation/rotation swaps therefore remain cache-only operations.

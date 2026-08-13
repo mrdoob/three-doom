@@ -26,6 +26,7 @@ import {
 } from './r_view.js';
 import { I_Quit, I_RegisterQuitGraphics } from './i_system.js';
 import { I_RunCleanupSteps } from './i_shutdown.js';
+import { R_RenderRetainedLevel } from './r_sprite_depth.js';
 
 // ---------- Three.js setup ----------
 export let renderer = null;
@@ -424,7 +425,14 @@ export function I_RenderView(targetScene = scene, targetCamera = camera) {
   renderer.setScissor(layout.viewX, layout.webglViewY, layout.viewWidth, layout.viewHeight);
   renderer.setScissorTest(true);
   try {
-    renderer.render(targetScene, targetCamera);
+    const spriteDepthPass = targetScene.userData.doomSpriteDepthPass;
+    if (spriteDepthPass !== undefined) {
+      R_RenderRetainedLevel(
+        renderer, targetScene, targetCamera, spriteDepthPass,
+      );
+    } else {
+      renderer.render(targetScene, targetCamera);
+    }
   } finally {
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, layout.canvasWidth, layout.canvasHeight);

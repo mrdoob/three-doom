@@ -27,6 +27,7 @@ import {
   SPRITE_SHADOW_PALETTE_INDEX,
 } from './r_sprite_logic.js';
 import { R_SpriteBillboardCenterY } from './r_sprite_projection.js';
+import { R_MarkWorldSprite } from './r_sprite_depth.js';
 
 // ---------- Sprite definition tables ----------
 export let numsprites = 0;
@@ -371,6 +372,7 @@ export function R_RegisterMobjSprite(mobj) {
     shadowPaletteIndex: SPRITE_SHADOW_PALETTE_INDEX,
   });
   const sprite = new THREE.Sprite(mat);
+  R_MarkWorldSprite(sprite);
   // WebGLRenderer only copies Sprite.center automatically for SpriteMaterial.
   // Link the custom uniform to the same mutable Vector2 instead.
   mat.uniforms.center.value = sprite.center;
@@ -467,8 +469,8 @@ export function R_UpdateSprites() {
     // R_ProjectSprite subtracts spriteoffset horizontally and anchors the top
     // at mobj.z + spritetopoffset. Flipping changes only column sampling; the
     // projected bounds stay fixed. Do not lift short-origin patches to the
-    // floor: retaining depth testing may clip the part behind a true-3D plane,
-    // but it preserves Doom's authored origin instead of moving every pixel.
+    // floor: the split sprite-depth pass draws them over visplanes while its
+    // wall-only depth buffer clips the exact bounds against nearer drawsegs.
     R_ApplySpritePatchGeometry(entry.sprite, mo, t);
     // Fuzz shimmer: nudge the Spectre's billboard vertically each frame.
     if (isShadow) entry.sprite.position.y += (Math.random() - 0.5) * SHADOW_JITTER;

@@ -16,6 +16,7 @@ import { R_MakeDoomMaterial } from './r_shader.js';
 import { skyflatnum } from './doomstat.js';
 import { R_FlatTextureUV } from './r_plane_mapping.js';
 import { R_NeedsSkyCeilingSeam } from './r_sky_logic.js';
+import { R_MarkSpriteOccluder } from './r_sprite_depth.js';
 
 // sector → [{bucket, kind, startVertex, vertexCount}] for the by-sector updaters.
 const _sectorContribs = new Map();
@@ -34,6 +35,7 @@ function attachSkyDepthOccluder(mesh, kind) {
   // behind a terminal sky cap/seam from overwriting it. Geometry physically
   // in front still passes the depth test and draws normally.
   const occluder = new THREE.Mesh(mesh.geometry, material);
+  R_MarkSpriteOccluder(occluder);
   occluder.frustumCulled = false;
   occluder.renderOrder = SKY_DEPTH_RENDER_ORDER;
   occluder.userData.doomSkyDepthOccluder = true;

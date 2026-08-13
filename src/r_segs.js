@@ -14,6 +14,7 @@ import { skyflatnum } from './doomstat.js';
 import { R_GetWallTexture, textures, R_RegisterWallMesh } from './r_data.js';
 import { R_MakeDoomMaterial } from './r_shader.js';
 import { top, middle, bottom, P_IsSwitchTexture } from './p_switch.js';
+import { R_MarkSpriteOccluder } from './r_sprite_depth.js';
 
 // Per-sector wall-quad contributions, so R_UpdateSectorWalls can re-write the
 // Y coordinates when a door/lift/floor moves. Each entry knows how to
@@ -456,6 +457,7 @@ export function R_BuildWalls(scene) {
         masked, side: THREE.FrontSide,
       });
       const mesh = new THREE.Mesh(g, mat);
+      R_MarkSpriteOccluder(mesh);
       mesh.frustumCulled = false;
       b.mesh = mesh; // make findable from per-contrib pointer
       R_RegisterWallMesh(texnum, mesh);

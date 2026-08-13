@@ -63,8 +63,9 @@ async function run() {
   assertEquals(maxY, 29, 'rendered top edge at world 14');
   assertEquals(count, 14 * 18, 'rendered source-sized area');
 
-  // Lock in the local depth tradeoff: source-authored bounds stay fixed and
-  // the true-3D depth buffer, rather than a position clamp, handles occlusion.
+  // Lock in the local material contract: source-authored bounds stay fixed
+  // and depth testing remains enabled. Production supplies a wall-only depth
+  // buffer for this material after painting its floor/ceiling planes.
   const palette = new Uint8Array(256 * 4);
   const maps = new Uint8Array(34 * 256);
   for (let i = 0; i < 256; i++) palette[i * 4 + 3] = 255;
