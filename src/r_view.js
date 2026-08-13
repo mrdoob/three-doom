@@ -8,13 +8,14 @@ export const STATUS_BAR_HEIGHT = 32;
 export const VIEW_AREA_HEIGHT = SCREENHEIGHT - STATUS_BAR_HEIGHT;
 export const MIN_SCREENBLOCKS = 3;
 export const MAX_SCREENBLOCKS = 11;
+export const DEFAULT_SCREENBLOCKS = 10;
 export const R_CAMERA_NEAR = 1;
 // Map vertices and sector heights are signed 16-bit map units. The maximum
 // opposite-corner 3D span is sqrt(3) * 65535 (~113,510), so 2^17 covers every
 // representable map without introducing an arbitrary custom-map cutoff.
 export const R_CAMERA_FAR = 131072;
 
-let _screenblocks = 9;
+let _screenblocks = DEFAULT_SCREENBLOCKS;
 let _detailLevel = 0;
 
 export function R_CalculateViewSize(blocks, detail = 0) {
@@ -102,7 +103,8 @@ export function R_DoomVerticalFov(aspect) {
   return 2 * Math.atan(1 / aspect) * 180 / Math.PI;
 }
 
-// m_misc.c's compiled default is screenblocks 9. Initialise the legacy
-// doomstat fields immediately so every display path observes real geometry
-// even before the options menu is first opened.
+// Use one step above m_misc.c's compiled screenblocks 9 default: a full-width
+// 320x168 view with the status bar retained. Initialise the legacy doomstat
+// fields immediately so every display path observes real geometry even before
+// the options menu is first opened.
 R_SetViewSize(_screenblocks, _detailLevel);

@@ -3,7 +3,9 @@
 import * as doomstat from './doomstat.js';
 import { HU_SetShowMessages, showMessages } from './hu_stuff.js';
 import { M_RegisterDefault } from './m_misc.js';
-import { R_GetScreenblocks, R_SetViewSize } from './r_view.js';
+import {
+  DEFAULT_SCREENBLOCKS, R_GetScreenblocks, R_SetViewSize,
+} from './r_view.js';
 import { set_usegamma, usegamma } from './v_video.js';
 
 let _registered = false;
@@ -34,7 +36,7 @@ export function M_RegisterDoomDefaults() {
   M_RegisterDefault('screenblocks', {
     get: () => R_GetScreenblocks(),
     set: (value) => R_SetViewSize(value | 0),
-  }, 9);
+  }, DEFAULT_SCREENBLOCKS);
   M_RegisterDefault('snd_channels', {
     get: () => doomstat.numChannels,
     set: (value) => doomstat.set_numChannels(value),

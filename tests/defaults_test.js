@@ -62,7 +62,7 @@ Deno.test('input, sound, messages, and video round-trip through registered defau
     assertEquals(doomstat.numChannels, 3, 'reference channel default');
     assertEquals(showMessages, true, 'reference message default');
     assertEquals(usegamma, 0, 'reference gamma default');
-    assertEquals(R_GetScreenblocks(), 9, 'reference screen-block default');
+    assertEquals(R_GetScreenblocks(), 10, 'browser screen-block default');
   } finally {
     doomstat.set_mouseSensitivity(5);
     doomstat.set_snd_SfxVolume(8);
@@ -70,7 +70,7 @@ Deno.test('input, sound, messages, and video round-trip through registered defau
     doomstat.set_numChannels(3);
     HU_SetShowMessages(1);
     set_usegamma(0);
-    R_SetViewSize(9);
+    R_SetViewSize(10);
     if (oldStorage === undefined) delete globalThis.localStorage;
     else Object.defineProperty(globalThis, 'localStorage', oldStorage);
   }
@@ -119,7 +119,7 @@ Deno.test('I_Quit saves defaults before late-registered graphics shutdown', asyn
     doomstat.set_numChannels(3);
     HU_SetShowMessages(1);
     set_usegamma(0);
-    R_SetViewSize(9);
+    R_SetViewSize(10);
     if (oldStorage === undefined) delete globalThis.localStorage;
     else Object.defineProperty(globalThis, 'localStorage', oldStorage);
   }

@@ -98,9 +98,9 @@ let _detailLevel  = 0;  // 0=high, 1=low
 // screenblocks is the corresponding renderer value (3..11) passed to
 // R_SetViewSize. They move together: m_menu.c:1152 has
 // `screenblocks-- ; screenSize--` and the inverse for grow.
-// m_misc.c:279 — vanilla default is screenblocks=9 (status bar visible,
-// view inset by one step inside a border). The matching slider position
-// is screenSize = screenblocks - 3 = 6 (m_menu.c:1854).
+// m_misc.c:279 uses screenblocks=9. The browser default is one step larger:
+// screenblocks=10 gives a full-width view with the status bar still visible,
+// at slider position screenSize = screenblocks - 3 = 7 (m_menu.c:1854).
 function getScreenSize() { return R_GetScreenblocks() - 3; }
 
 export function getScreenblocks() { return R_GetScreenblocks(); }
