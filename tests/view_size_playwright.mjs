@@ -595,6 +595,7 @@ try {
       expectedDepthFunc: THREE.LessEqualDepth,
       depthWrite: skyMesh.material.depthWrite,
       clear: readGl(0, 0),
+      expectedViewClear: [...palette.subarray(0, 4)],
       sky: portalRead(0.25, 0.7),
       expectedSky: rowPixel(sourceIndex, 0),
       void: portalRead(0.75, 0.7),
@@ -717,8 +718,9 @@ try {
       skyPortalMask.depthTest !== true ||
       skyPortalMask.depthFunc !== skyPortalMask.expectedDepthFunc ||
       skyPortalMask.depthWrite !== false ||
+      !pixelsEqual(skyPortalMask.clear, [0, 0, 0, 255]) ||
       !pixelsEqual(skyPortalMask.sky, skyPortalMask.expectedSky) ||
-      !pixelsEqual(skyPortalMask.void, skyPortalMask.clear) ||
+      !pixelsEqual(skyPortalMask.void, skyPortalMask.expectedViewClear) ||
       !pixelsEqual(skyPortalMask.behind, skyPortalMask.expectedSky) ||
       !pixelsEqual(skyPortalMask.front, [255, 0, 0, 255]) ||
       skyPortalMask.glError !== skyPortalMask.expectedGlError) {

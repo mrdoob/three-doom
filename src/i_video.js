@@ -63,6 +63,7 @@ import('./doomstat.js').then((d) => { if (_shuttingDown === false) _doomstat = d
 
 let _onPointerLockChange = null;
 let _rendererClickTarget = null;
+let _paletteClearColor = 0x000000;
 // A primary press that opens the attract/demo menu is followed by a browser
 // `click`.  Suppress only that matching click so it cannot immediately act on
 // the newly-opened menu; later clicks remain available to M_HandleTap.
@@ -367,20 +368,17 @@ export function I_SetPalette(rgbBytes) {
   I_SetPaletteIndex(0);
 }
 
-// Switches the whole composed frame to the selected PLAYPAL palette, matching
-// the hardware-palette update in linuxdoom i_video.c.
+// Switches the whole logical Doom frame to the selected PLAYPAL palette,
+// matching the hardware-palette update in linuxdoom i_video.c.
 export function I_SetPaletteIndex(n) {
   const selected = V_SetPaletteIndex(n);
   R_SetPaletteIndex(selected);
 
-  // Doom also palette-shifts index 0. Keep the renderer clear and page
-  // letterbox in sync instead of leaving unflashed black around the scene.
-  const background = V_PaletteCSS(0);
-  if (renderer !== null) renderer.setClearColor(background);
-  if (typeof document !== 'undefined') {
-    document.documentElement.style.backgroundColor = background;
-    if (document.body !== null) document.body.style.backgroundColor = background;
-  }
+  // Doom also palette-shifts index 0 inside its 320x200 framebuffer. Keep that
+  // color for the scissored game view, but not for the browser-only letterbox
+  // outside the logical screen; the original display has no such pixels.
+  _paletteClearColor = V_PaletteCSS(0);
+  if (renderer !== null) renderer.setClearColor(_paletteClearColor);
 }
 
 // ---------- Per-frame ----------
@@ -401,7 +399,12 @@ export function I_ClearFrame() {
   if (renderer === null || overlayCanvas === null) return;
   renderer.setScissorTest(false);
   renderer.setViewport(0, 0, overlayCanvas.width, overlayCanvas.height);
+  // Clear the host window to fixed black, then restore the active PLAYPAL
+  // index-0 color. renderer.render() will use the restored color only inside
+  // the Doom view's scissor rectangle.
+  renderer.setClearColor(0x000000);
   renderer.clear(true, true, true);
+  renderer.setClearColor(_paletteClearColor);
 }
 
 // Render the world only into the logical Doom view window. WebGL viewport Y
