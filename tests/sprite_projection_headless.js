@@ -64,8 +64,8 @@ async function run() {
   assertEquals(count, 14 * 18, 'rendered source-sized area');
 
   // Lock in the local material contract: source-authored bounds stay fixed
-  // and depth testing remains enabled. Production supplies a wall-only depth
-  // buffer for this material after painting its floor/ceiling planes.
+  // and depth testing remains enabled. Production's support-plane pass
+  // repairs only the authored rows that belong over the actor's own floor.
   const palette = new Uint8Array(256 * 4);
   const maps = new Uint8Array(34 * 256);
   for (let i = 0; i < 256; i++) palette[i * 4 + 3] = 255;

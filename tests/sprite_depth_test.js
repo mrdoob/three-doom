@@ -1,37 +1,49 @@
 import {
   R_CreateSpriteDepthPass,
-  R_MarkSpriteOccluder,
   R_MarkWorldSprite,
   R_RenderRetainedLevel,
-  R_SPRITE_OCCLUDER_LAYER,
+  R_SPRITE_EQUAL_DEPTH,
   R_WORLD_SPRITE_LAYER,
 } from '../src/r_sprite_depth.js';
+
+const LESS_EQUAL_DEPTH = 3;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-Deno.test('world sprites and wall silhouettes retain the ordinary layer', () => {
+Deno.test('world sprites retain the ordinary layer and add the repair layer', () => {
   const enabled = [];
   const object = { layers: { enable: (layer) => enabled.push(layer) } };
   R_MarkWorldSprite(object);
-  R_MarkSpriteOccluder(object);
-  assert(enabled.join(',') === `${R_WORLD_SPRITE_LAYER},${R_SPRITE_OCCLUDER_LAYER}`,
+  assert(enabled.join(',') === `${R_WORLD_SPRITE_LAYER}`,
     `unexpected retained layers: ${enabled}`);
 });
 
-Deno.test('retained sprite pass excludes plane depth and restores renderer state', () => {
-  const materialA = { colorWrite: true };
-  const materialB = { colorWrite: false };
-  const walls = {
+Deno.test('fallback material discovery deduplicates shared sprite materials', () => {
+  const shared = { depthFunc: LESS_EQUAL_DEPTH };
+  const things = {
+    userData: {},
     traverse(callback) {
-      callback({ material: materialA });
-      callback({ material: [materialA, materialB] });
+      callback({ isSprite: true, material: shared });
+      callback({ isSprite: true, material: shared });
     },
   };
-  const things = { visible: true };
-  const pass = R_CreateSpriteDepthPass(things, walls);
-  assert(pass.wallMaterials.length === 2, 'wall materials were not cached uniquely');
+  const pass = R_CreateSpriteDepthPass(things, { value: 0 });
+  assert(pass.spriteMaterials.length === 1,
+    `shared sprite material was registered ${pass.spriteMaterials.length} times`);
+});
+
+Deno.test('retained sprite pass matches overhangs to support-plane depth and restores state', () => {
+  const materialA = { depthFunc: LESS_EQUAL_DEPTH };
+  const materialB = { depthFunc: 1234 };
+  const things = {
+    visible: true,
+    userData: { doomSpriteMaterials: [materialA, materialB] },
+  };
+  const floorPass = { value: 0 };
+  const pass = R_CreateSpriteDepthPass(things, floorPass);
+  assert(pass.spriteMaterials.length === 2, 'sprite materials were not cached');
 
   const events = [];
   const renderer = {
@@ -39,10 +51,10 @@ Deno.test('retained sprite pass excludes plane depth and restores renderer state
     render(_scene, camera) {
       events.push({
         type: 'render', mask: camera.layers.mask, autoClear: this.autoClear,
-        things: things.visible, a: materialA.colorWrite, b: materialB.colorWrite,
+        things: things.visible, floorPass: floorPass.value,
+        a: materialA.depthFunc, b: materialB.depthFunc,
       });
     },
-    clearDepth() { events.push({ type: 'clearDepth' }); },
   };
   const camera = {
     layers: {
@@ -52,25 +64,28 @@ Deno.test('retained sprite pass excludes plane depth and restores renderer state
   };
 
   const count = R_RenderRetainedLevel(renderer, {}, camera, pass);
-  assert(count === 3, `unexpected render count ${count}`);
+  assert(count === 2, `unexpected render count ${count}`);
   assert(JSON.stringify(events) === JSON.stringify([
-    { type: 'render', mask: 1, autoClear: true, things: false, a: true, b: false },
-    { type: 'clearDepth' },
-    { type: 'render', mask: 4, autoClear: false, things: false, a: false, b: false },
-    { type: 'render', mask: 2, autoClear: false, things: true, a: false, b: false },
+    { type: 'render', mask: 1, autoClear: true, things: true,
+      floorPass: 1, a: LESS_EQUAL_DEPTH, b: 1234 },
+    { type: 'render', mask: 2, autoClear: false, things: true,
+      floorPass: 2, a: R_SPRITE_EQUAL_DEPTH, b: R_SPRITE_EQUAL_DEPTH },
   ]), `split render order mismatch: ${JSON.stringify(events)}`);
   assert(renderer.autoClear === true && camera.layers.mask === 37 && things.visible === true,
     'renderer visibility state leaked after the split pass');
-  assert(materialA.colorWrite === true && materialB.colorWrite === false,
-    'wall color-write state leaked after the split pass');
+  assert(materialA.depthFunc === LESS_EQUAL_DEPTH && materialB.depthFunc === 1234,
+    'sprite depth-function state leaked after the split pass');
+  assert(floorPass.value === 0, 'sprite floor-pass mode leaked after the split pass');
 });
 
 Deno.test('retained sprite pass restores state when a render throws', () => {
-  const material = { colorWrite: true };
-  const things = { visible: true };
-  const pass = R_CreateSpriteDepthPass(things, {
-    traverse(callback) { callback({ material }); },
-  });
+  const material = { depthFunc: LESS_EQUAL_DEPTH };
+  const things = {
+    visible: true,
+    userData: { doomSpriteMaterials: [material] },
+  };
+  const floorPass = { value: 0 };
+  const pass = R_CreateSpriteDepthPass(things, floorPass);
   let renders = 0;
   const renderer = {
     autoClear: true,
@@ -78,7 +93,6 @@ Deno.test('retained sprite pass restores state when a render throws', () => {
       renders++;
       if (renders === 2) throw new Error('expected render failure');
     },
-    clearDepth() {},
   };
   const camera = {
     layers: { mask: 11, set(layer) { this.mask = 1 << layer; } },
@@ -92,5 +106,6 @@ Deno.test('retained sprite pass restores state when a render throws', () => {
   assert(threw, 'split pass swallowed the render failure');
   assert(renderer.autoClear === true && camera.layers.mask === 11 && things.visible === true,
     'renderer state leaked from the failed split pass');
-  assert(material.colorWrite === true, 'wall material leaked from the failed split pass');
+  assert(material.depthFunc === LESS_EQUAL_DEPTH, 'sprite depth function leaked from the failed pass');
+  assert(floorPass.value === 0, 'sprite floor-pass mode leaked from the failed split pass');
 });

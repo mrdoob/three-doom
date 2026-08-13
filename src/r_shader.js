@@ -18,6 +18,10 @@ import {
   LIGHTLEVELS, MAXLIGHTSCALE, MAXLIGHTZ, NUMCOLORMAPS, DISTMAP,
   LIGHT_PROJECTION, REFERENCE_SCREENWIDTH,
 } from './r_light_logic.js';
+import {
+  R_SPRITE_PASS_FULL,
+  spriteFloorPassUniform,
+} from './r_sprite_depth.js';
 
 // Singletons — built lazily from the WAD's PLAYPAL + COLORMAP lumps.
 let _paletteTex = null;
@@ -100,6 +104,8 @@ export function R_ShutdownShader() {
   extralightUniform.value = 0;
   fixedColormapUniform.value = -1;
   scaledViewWidthUniform.value = REFERENCE_SCREENWIDTH;
+  spriteFloorPassUniform.value = R_SPRITE_PASS_FULL;
+  spriteFloorViewportUniform.value.set(0, 0, 1, 1);
 }
 
 // Build the (R8 index, R8 alpha) data texture from a Uint8Array of palette
@@ -129,6 +135,15 @@ export function R_MakeIndexedTexture(indices, alphas, w, h) {
 export const extralightUniform = { value: 0 };
 export const fixedColormapUniform = { value: -1 };
 export const scaledViewWidthUniform = { value: REFERENCE_SCREENWIDTH };
+export const spriteFloorViewportUniform = { value: new THREE.Vector4(0, 0, 1, 1) };
+
+// gl_FragCoord is expressed in physical framebuffer pixels. Three.js keeps
+// that exact current viewport internally (including devicePixelRatio), so a
+// shared material hook can update every plane/sprite without allocating in
+// the display loop or relying on the Canvas layout implementation.
+function updateSpriteFloorViewport(renderer) {
+  renderer.getCurrentViewport(spriteFloorViewportUniform.value);
+}
 
 export function R_SetViewLighting(
   extralight,
@@ -150,13 +165,43 @@ const VERT_SHADER = /* glsl */ `
 varying vec2 vUv;
 varying vec3 vColor;
 varying float vViewDepth;
+#ifdef DOOM_PLANE_DEPTH
+varying float vPlaneHeight;
+#endif
 
 void main() {
   vUv = uv;
   vColor = color;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vViewDepth = -mv.z;
+#ifdef DOOM_PLANE_DEPTH
+  vPlaneHeight = (modelMatrix * vec4(position, 1.0)).y;
+#endif
   gl_Position = projectionMatrix * mv;
+}
+`;
+
+// Both physical floor fragments and below-floor sprite fragments call this
+// exact function. Producing the same quantized depth is what makes EqualDepth
+// an ownership test for the sprite's supporting floor, without a tolerance
+// that could admit a different step or wall.
+const SUPPORT_PLANE_DEPTH_GLSL = /* glsl */ `
+uniform mat4 projectionMatrix;
+uniform vec4 doomViewport;
+
+float doomSupportPlaneDepth(float height) {
+  vec2 ndc = ((gl_FragCoord.xy - doomViewport.xy) / doomViewport.zw) * 2.0 - 1.0;
+  vec3 ray = vec3(
+    ndc.x / projectionMatrix[0][0],
+    ndc.y / projectionMatrix[1][1],
+    -1.0
+  );
+  vec3 planeNormal = mat3(viewMatrix) * vec3(0.0, 1.0, 0.0);
+  vec3 planePoint = (viewMatrix * vec4(0.0, height, 0.0, 1.0)).xyz;
+  float denominator = dot(planeNormal, ray);
+  float scale = dot(planeNormal, planePoint) / denominator;
+  vec4 clipPosition = projectionMatrix * vec4(scale * ray, 1.0);
+  return clipPosition.z / clipPosition.w * 0.5 + 0.5;
 }
 `;
 
@@ -177,6 +222,11 @@ uniform float fixedColormap;     // -1 = use shading, >=0 = force this row (invu
 uniform float scaledViewWidth;   // R_ExecuteSetViewSize's scaledviewwidth
 uniform bool masked;
 uniform bool planeLighting;
+
+#ifdef DOOM_PLANE_DEPTH
+${SUPPORT_PLANE_DEPTH_GLSL}
+varying float vPlaneHeight;
+#endif
 
 varying vec2 vUv;
 varying vec3 vColor;
@@ -224,6 +274,9 @@ void main() {
   // Final RGB from the palette.
   vec3 rgb = texture2D(palette, vec2(remap, 0.5)).rgb;
   gl_FragColor = vec4(rgb, 1.0);
+#ifdef DOOM_PLANE_DEPTH
+  gl_FragDepth = doomSupportPlaneDepth(vPlaneHeight);
+#endif
 }
 `;
 
@@ -235,7 +288,7 @@ export function R_MakeDoomMaterial(map, { masked = false, plane = false, side = 
   if (_paletteTex === null || _colormapTex === null) {
     throw new Error('R_MakeDoomMaterial called before R_ShaderInit');
   }
-  return new THREE.ShaderMaterial({
+  const material = new THREE.ShaderMaterial({
     uniforms: {
       map:           { value: map },
       palette:       { value: _paletteTex },
@@ -245,7 +298,9 @@ export function R_MakeDoomMaterial(map, { masked = false, plane = false, side = 
       scaledViewWidth: scaledViewWidthUniform,
       masked:        { value: masked },
       planeLighting: { value: plane },
+      doomViewport:  spriteFloorViewportUniform,
     },
+    defines: plane ? { DOOM_PLANE_DEPTH: '' } : {},
     vertexShader:   VERT_SHADER,
     fragmentShader: FRAG_SHADER,
     vertexColors:   true,
@@ -253,6 +308,8 @@ export function R_MakeDoomMaterial(map, { masked = false, plane = false, side = 
     transparent:    false,
     depthWrite,
   });
+  if (plane) material.onBeforeRender = updateSpriteFloorViewport;
+  return material;
 }
 
 // THREE.Sprite uses a shared unit quad and expands it in view space. This is
@@ -300,14 +357,31 @@ uniform float playerTranslation;
 uniform float opacity;
 uniform float alphaCutoff;
 uniform float shadowPaletteIndex;
+uniform int floorPass;
+uniform float floorCutoff;
+uniform float floorHeight;
+
+${SUPPORT_PLANE_DEPTH_GLSL}
 
 varying vec2 vUv;
 varying float vViewDepth;
 
 void main() {
+  // Split the source patch at its physical support plane. The ordinary pass
+  // keeps the body; the repair pass keeps only the authored rows below it.
+  if (floorPass == 1 && vUv.y < floorCutoff) discard;
+  if (floorPass == 2 && vUv.y >= floorCutoff) discard;
+
   vec2 texel = texture2D(map, vUv).rg;
   float alpha = texel.g * opacity;
   if (alpha < alphaCutoff) discard;
+
+  // In the repair pass, EqualDepth accepts only a pixel whose retained world
+  // depth belongs to the actor's own floor plane. A nearer step or wall has a
+  // different stored depth and continues to clip the sprite.
+  gl_FragDepth = floorPass == 2
+    ? doomSupportPlaneDepth(floorHeight)
+    : gl_FragCoord.z;
 
   if (shadow) {
     vec3 shadowRgb = texture2D(palette, vec2(shadowPaletteIndex, 0.5)).rgb;
@@ -366,6 +440,10 @@ export function R_MakeDoomSpriteMaterial(map, { alphaCutoff = 0.5, shadowPalette
       opacity:       { value: 1 },
       alphaCutoff:   { value: alphaCutoff },
       shadowPaletteIndex: { value: shadowPaletteIndex / 255 },
+      floorPass:     spriteFloorPassUniform,
+      floorCutoff:   { value: 0 },
+      floorHeight:   { value: 0 },
+      doomViewport:  spriteFloorViewportUniform,
       center:        { value: new THREE.Vector2(0.5, 0.5) },
       rotation:      { value: 0 },
     },
@@ -373,11 +451,11 @@ export function R_MakeDoomSpriteMaterial(map, { alphaCutoff = 0.5, shadowPalette
     fragmentShader: SPRITE_FRAG_SHADER,
     transparent: true,
     // Preserve world occlusion at authored patch coordinates. The production
-    // masked-object pass rebuilds depth from wall silhouettes only, matching
-    // Doom's drawseg clipping without letting floor planes cut off the patch.
+    // floor-overhang pass changes depthFunc only around its second submission.
     depthTest: true,
     depthWrite: true,
   });
+  material.onBeforeRender = updateSpriteFloorViewport;
   // Sprite.raycast reads material.rotation even for a custom material.
   material.rotation = 0;
   return material;

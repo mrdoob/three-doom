@@ -331,6 +331,8 @@ function removeLiveSpriteAt(index) {
   const sp = _liveSprites[index].sprite;
   if (sp.parent !== null) sp.parent.remove(sp);
   if (sp.material !== null) sp.material.dispose();
+  const materials = _thingsGroup?.userData?.doomSpriteMaterials;
+  if (Array.isArray(materials)) materials.splice(index, 1);
   _liveSprites.splice(index, 1);
 }
 
@@ -380,6 +382,7 @@ export function R_RegisterMobjSprite(mobj) {
   // at (0,0,0) for newly-spawned mobjs.
   sprite.visible = false;
   _thingsGroup.add(sprite);
+  _thingsGroup.userData.doomSpriteMaterials.push(mat);
   _liveSprites.push({ sprite, mobj, _isShadow: false });
 }
 
@@ -469,8 +472,8 @@ export function R_UpdateSprites() {
     // R_ProjectSprite subtracts spriteoffset horizontally and anchors the top
     // at mobj.z + spritetopoffset. Flipping changes only column sampling; the
     // projected bounds stay fixed. Do not lift short-origin patches to the
-    // floor: the split sprite-depth pass draws them over visplanes while its
-    // wall-only depth buffer clips the exact bounds against nearer drawsegs.
+    // floor: the support-plane pass restores only their authored overhang,
+    // while retained world depth still clips it against other floors/walls.
     R_ApplySpritePatchGeometry(entry.sprite, mo, t);
     // Fuzz shimmer: nudge the Spectre's billboard vertically each frame.
     if (isShadow) entry.sprite.position.y += (Math.random() - 0.5) * SHADOW_JITTER;
@@ -479,6 +482,15 @@ export function R_UpdateSprites() {
     // runtime (the powerup wears off), so switch material modes on change.
     const mat = entry.sprite.material;
     const uniforms = mat.uniforms;
+    // Only the source interval physically below the actor's current support
+    // plane needs Doom's masked-object overlap. This also handles a low
+    // airborne actor without treating its complete below-origin artwork as a
+    // floor exception.
+    const patchBottom = mo.z / FRACUNIT + t.offsetY - t.h;
+    const floorHeight = mo.floorz / FRACUNIT;
+    const belowFloor = Math.max(0, Math.min(t.h, floorHeight - patchBottom));
+    uniforms.floorCutoff.value = belowFloor / t.h;
+    uniforms.floorHeight.value = floorHeight;
     const playerTranslation = R_PlayerTranslationFromFlags(mo.flags);
     if (entry._lastPlayerTranslation !== playerTranslation) {
       uniforms.playerTranslation.value = playerTranslation;
@@ -545,6 +557,7 @@ export function R_BuildSpriteBillboards(scene) {
   _liveSprites.length = 0;
   _thingsGroup = new THREE.Group();
   _thingsGroup.name = 'things';
+  _thingsGroup.userData.doomSpriteMaterials = [];
   scene.add(_thingsGroup);
   // Walk the thinker list and register every mobj that's already in the
   // world (initial map things + player). p_tick.js's thinkercap is a doubly-

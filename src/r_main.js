@@ -22,7 +22,7 @@ import { R_SetViewLighting } from './r_shader.js';
 import { segs } from './p_setup.js';
 import { ML_MAPPED } from './doomdata.js';
 import { R_GetViewSize } from './r_view.js';
-import { R_CreateSpriteDepthPass } from './r_sprite_depth.js';
+import { R_CreateSpriteDepthPass, spriteFloorPassUniform } from './r_sprite_depth.js';
 
 let _levelRoot = null;
 
@@ -94,10 +94,12 @@ export function R_NewMap() {
   _levelRoot.name = 'level';
   scene.add(_levelRoot);
   const skyMaterials = R_BuildSky();
-  const walls = R_BuildWalls(_levelRoot);
+  R_BuildWalls(_levelRoot);
   R_BuildPlanes(_levelRoot, skyMaterials);
   const things = R_BuildSpriteBillboards(_levelRoot);
-  scene.userData.doomSpriteDepthPass = R_CreateSpriteDepthPass(things, walls);
+  scene.userData.doomSpriteDepthPass = R_CreateSpriteDepthPass(
+    things, spriteFloorPassUniform,
+  );
   // Bind each current billboard to an already-decoded texture, then upload
   // level-owned clones (notably the sky) and compile shader programs. Later
   // animation/rotation swaps therefore remain cache-only operations.
