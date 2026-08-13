@@ -20,6 +20,33 @@ import { R_NeedsSkyCeilingSeam } from './r_sky_logic.js';
 // sector → [{bucket, kind, startVertex, vertexCount}] for the by-sector updaters.
 const _sectorContribs = new Map();
 let _skyMaterials = null;
+const SKY_COLOR_RENDER_ORDER = -2;
+const SKY_DEPTH_RENDER_ORDER = -1;
+
+function attachSkyDepthOccluder(mesh, kind) {
+  if (mesh.__doomSkyDepthOccluder !== undefined) return;
+  const material = kind === 'floor'
+    ? _skyMaterials?.floorOccluder
+    : _skyMaterials?.ceilingOccluder;
+  if (material === null || material === undefined) return;
+  // Render the screen-space sky color first. This paired mesh then writes the
+  // portal's real world depth without touching color, preventing geometry
+  // behind a terminal sky cap/seam from overwriting it. Geometry physically
+  // in front still passes the depth test and draws normally.
+  const occluder = new THREE.Mesh(mesh.geometry, material);
+  occluder.frustumCulled = false;
+  occluder.renderOrder = SKY_DEPTH_RENDER_ORDER;
+  occluder.userData.doomSkyDepthOccluder = true;
+  mesh.add(occluder);
+  mesh.__doomSkyDepthOccluder = occluder;
+}
+
+function detachSkyDepthOccluder(mesh) {
+  const occluder = mesh.__doomSkyDepthOccluder;
+  if (occluder === undefined) return;
+  mesh.remove(occluder);
+  delete mesh.__doomSkyDepthOccluder;
+}
 
 function attachSectorContribution(sector, contribution) {
   if (sector === null || sector === undefined) return;
@@ -232,8 +259,10 @@ export function R_BuildPlanes(scene, skyMaterials = null) {
       mesh.userData.doomSector = b.sector;
       mesh.userData.doomPlaneKind = b.kind;
       mesh.userData.doomSkyPortal = isSky;
-      if (isSky) mesh.renderOrder = -Infinity;
-      else R_RegisterFlatMesh(b.flatnum, mesh);
+      if (isSky) {
+        mesh.renderOrder = SKY_COLOR_RENDER_ORDER;
+        attachSkyDepthOccluder(mesh, b.kind);
+      } else R_RegisterFlatMesh(b.flatnum, mesh);
       group.add(mesh);
     }
     scene.add(group);
@@ -299,7 +328,8 @@ export function R_BuildPlanes(scene, skyMaterials = null) {
     mesh.userData.doomSkyPortalKind = 'ceiling-seams';
     mesh.userData.doomSkySeamCount = activeCount;
     mesh.userData.doomSkySeamCandidates = candidateCount;
-    mesh.renderOrder = -Infinity;
+    mesh.renderOrder = SKY_COLOR_RENDER_ORDER;
+    attachSkyDepthOccluder(mesh, 'sky-ceiling-seam');
     seamBucket.mesh = mesh;
     const group = new THREE.Group();
     group.name = 'sky-ceiling-seams';
@@ -356,13 +386,15 @@ function rebindPlaneMaterial(c, flatnum) {
       oldMaterial.dispose();
     }
     mesh.userData.doomSkyPortal = true;
-    mesh.renderOrder = -Infinity;
+    mesh.renderOrder = SKY_COLOR_RENDER_ORDER;
+    attachSkyDepthOccluder(mesh, c.kind);
     bucket.flatnum = flatnum;
     return true;
   }
   if (wasSky) {
     const map = R_GetFlatTexture(flatnum);
     if (map === null) return false;
+    detachSkyDepthOccluder(mesh);
     mesh.material = R_MakeDoomMaterial(map, {
       plane: true, side: THREE.FrontSide,
     });

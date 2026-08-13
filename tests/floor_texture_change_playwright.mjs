@@ -23,8 +23,10 @@ try {
 
   const result = await page.evaluate(async () => {
     const data = await import('/src/r_data.js');
+    const doomstat = await import('/src/doomstat.js');
     const loop = await import('/src/d_loop.js');
     const plats = await import('/src/p_plats.js');
+    const planeRenderer = await import('/src/r_plane.js');
     const setup = await import('/src/p_setup.js');
     loop.D_DoomRafLoop.stop();
 
@@ -61,6 +63,29 @@ try {
     data.R_AnimateTextures(8);
     const animatedMap = registryProbe.material.uniforms.map.value.uuid;
 
+    // A runtime flat-to-sky change must gain the paired physical-depth pass,
+    // and changing back must remove it before normal flat rendering resumes.
+    const changedFlat = target.floorpic;
+    target.floorpic = doomstat.skyflatnum;
+    planeRenderer.R_UpdateSectorPlanes(target);
+    const skyRebind = {
+      portal: meshes[0].userData.doomSkyPortal,
+      occluders: meshes[0].children.filter((child) =>
+        child.userData.doomSkyDepthOccluder === true &&
+        child.geometry === meshes[0].geometry
+      ).length,
+    };
+    target.floorpic = changedFlat;
+    planeRenderer.R_UpdateSectorPlanes(target);
+    const flatRebind = {
+      portal: meshes[0].userData.doomSkyPortal,
+      occluders: meshes[0].children.filter((child) =>
+        child.userData.doomSkyDepthOccluder === true
+      ).length,
+      map: meshes[0].material.uniforms.map.value.uuid,
+      expectedMap: data.R_GetFlatTexture(changedFlat).uuid,
+    };
+
     return {
       activated,
       meshCount: meshes.length,
@@ -68,6 +93,8 @@ try {
       after,
       rebound,
       registryStayedRebound: reboundMap === animatedMap,
+      skyRebind,
+      flatRebind,
     };
   });
 
@@ -78,7 +105,10 @@ try {
   if (result.activated !== 1 || result.meshCount !== 1 ||
       result.before.flat === result.after.flat || everyMapChanged !== true ||
       everyMapMatches !== true || result.rebound !== true ||
-      result.registryStayedRebound !== true) {
+      result.registryStayedRebound !== true ||
+      result.skyRebind.portal !== true || result.skyRebind.occluders !== 1 ||
+      result.flatRebind.portal !== false || result.flatRebind.occluders !== 0 ||
+      result.flatRebind.map !== result.flatRebind.expectedMap) {
     throw new Error(`runtime floor texture mismatch: ${JSON.stringify(result)}`);
   }
   if (errors.length !== 0) throw new Error(`page errors: ${errors.join('; ')}`);

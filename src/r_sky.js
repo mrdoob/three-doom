@@ -32,6 +32,8 @@ export let skytexturemid = 0;
 
 let _skyMat = null;
 let _skyFloorMat = null;
+let _skyDepthMat = null;
+let _skyFloorDepthMat = null;
 // The cloned sky texture from R_GetWallTexture — held so the next R_BuildSky
 // can dispose it. R_NewMap's _levelRoot teardown skips material.map.dispose()
 // (wall textures are cache-owned), but this clone is owned solely by the sky,
@@ -47,11 +49,17 @@ export function R_ShutdownSky() {
   const disposedMaterials = [];
   if (_skyMat !== null) disposedMaterials.push(_skyMat);
   if (_skyFloorMat !== null) disposedMaterials.push(_skyFloorMat);
+  if (_skyDepthMat !== null) disposedMaterials.push(_skyDepthMat);
+  if (_skyFloorDepthMat !== null) disposedMaterials.push(_skyFloorDepthMat);
   if (_skyMat !== null) _skyMat.dispose();
   if (_skyFloorMat !== null) _skyFloorMat.dispose();
+  if (_skyDepthMat !== null) _skyDepthMat.dispose();
+  if (_skyFloorDepthMat !== null) _skyFloorDepthMat.dispose();
   if (_skyMap !== null) _skyMap.dispose();
   _skyMat = null;
   _skyFloorMat = null;
+  _skyDepthMat = null;
+  _skyFloorDepthMat = null;
   _skyMap = null;
   _cachedFov = -1;
   _cachedAspect = -1;
@@ -174,6 +182,8 @@ export function R_BuildSky() {
   // of map changes doesn't leak shader programs / uniform buffers / textures.
   if (_skyMat !== null) _skyMat.dispose();
   if (_skyFloorMat !== null) _skyFloorMat.dispose();
+  if (_skyDepthMat !== null) _skyDepthMat.dispose();
+  if (_skyFloorDepthMat !== null) _skyFloorDepthMat.dispose();
   if (_skyMap !== null) _skyMap.dispose();
   _skyMap = map;
 
@@ -194,9 +204,10 @@ export function R_BuildSky() {
     vertexShader:   SKY_VERT,
     fragmentShader: SKY_FRAG,
     side:           THREE.DoubleSide,
-    // Sky is an infinite far-depth fill, not a physical plane at a sector
-    // height. Portal meshes render first without writing depth, and later
-    // opaque/masked world geometry overwrites them like Doom's drawing stages.
+    // Sky color is an infinite far-depth fill, not a texture painted on a
+    // physical ceiling. r_plane pairs it with a colorless physical-depth
+    // occluder so geometry in front can overwrite it while retained geometry
+    // behind the terminal sky portal remains hidden like Doom's BSP spans.
     depthTest:      true,
     depthFunc:      THREE.LessEqualDepth,
     depthWrite:     false,
@@ -208,7 +219,23 @@ export function R_BuildSky() {
   _skyFloorMat.uniforms = _skyMat.uniforms;
   _skyFloorMat.side = THREE.FrontSide;
   _skyFloorMat.needsUpdate = true;
-  return { floor: _skyFloorMat, ceiling: _skyMat };
+
+  _skyDepthMat = new THREE.MeshBasicMaterial({
+    colorWrite: false,
+    depthTest: true,
+    depthFunc: THREE.LessEqualDepth,
+    depthWrite: true,
+    side: THREE.DoubleSide,
+  });
+  _skyFloorDepthMat = _skyDepthMat.clone();
+  _skyFloorDepthMat.side = THREE.FrontSide;
+  _skyFloorDepthMat.needsUpdate = true;
+  return {
+    floor: _skyFloorMat,
+    ceiling: _skyMat,
+    floorOccluder: _skyFloorDepthMat,
+    ceilingOccluder: _skyDepthMat,
+  };
 }
 
 // Update per-frame uniforms. Called after R_SetupFrame, so the camera matrix

@@ -325,9 +325,25 @@ try {
     // only bounded portal meshes, never an unmasked fullscreen sky object.
     let skyMesh = null;
     let skyPortalCount = 0;
+    let skyDepthOccluder = null;
+    let skyDepthOccluderCount = 0;
+    let invalidSkyDepthOccluderCount = 0;
     let unmaskedSkyMeshCount = 0;
     let wrongSideSkyMeshCount = 0;
     window.scene.traverse((object) => {
+      if (object.userData.doomSkyDepthOccluder === true) {
+        skyDepthOccluder ??= object;
+        skyDepthOccluderCount++;
+        if (object.material.colorWrite !== false || object.material.depthTest !== true ||
+            object.material.depthWrite !== true ||
+            object.material.depthFunc !== THREE.LessEqualDepth ||
+            object.renderOrder >= 0 ||
+            object.parent?.userData.doomSkyPortal !== true ||
+            object.geometry !== object.parent.geometry ||
+            object.renderOrder <= object.parent.renderOrder) {
+          invalidSkyDepthOccluderCount++;
+        }
+      }
       if (object.material?.uniforms?.skyViewHeight === undefined) return;
       if (skyMesh === null) skyMesh = object;
       if (object.userData.doomSkyPortal === true) skyPortalCount++;
@@ -337,6 +353,7 @@ try {
       if (object.material.side !== expectedSide) wrongSideSkyMeshCount++;
     });
     if (skyMesh === null) throw new Error('E1M1 sky shader mesh is missing');
+    if (skyDepthOccluder === null) throw new Error('E1M1 sky depth occluder is missing');
     let seamMesh = null;
     window.scene.traverse((object) => {
       if (object.userData.doomSkyPortalKind === 'ceiling-seams') seamMesh = object;
@@ -519,10 +536,10 @@ try {
     skyMap.needsUpdate = true;
     skyTestGeometry.dispose();
 
-    // A bounded portal occupies only the left side. The right side is void,
-    // and an opaque red surface behind the portal must still draw over the
-    // infinite sky. This catches both the old fullscreen leak and an incorrect
-    // finite, depth-writing sky ceiling.
+    // A bounded portal occupies only the left side and the right side is void.
+    // Its color pass stays at infinite depth, while a paired colorless physical
+    // pass hides retained geometry behind the terminal sky. Moving the same
+    // red surface physically in front must make it visible again.
     const portalTexture = shader.R_MakeIndexedTexture(
       Uint8Array.of(sourceIndex), Uint8Array.of(255), 1, 1,
     );
@@ -542,8 +559,12 @@ try {
     const portalGeometry = new THREE.PlaneGeometry(4, 4);
     const portalMesh = new THREE.Mesh(portalGeometry, skyMesh.material);
     portalMesh.position.set(-2.5, 0, -5);
-    portalMesh.renderOrder = -Infinity;
+    portalMesh.renderOrder = skyMesh.renderOrder;
     portalScene.add(portalMesh);
+    const portalOccluder = new THREE.Mesh(portalGeometry, skyDepthOccluder.material);
+    portalOccluder.position.copy(portalMesh.position);
+    portalOccluder.renderOrder = skyDepthOccluder.renderOrder;
+    portalScene.add(portalOccluder);
     const redGeometry = new THREE.PlaneGeometry(1, 1);
     const redMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
     const redMesh = new THREE.Mesh(redGeometry, redMaterial);
@@ -555,8 +576,17 @@ try {
       portalLayout.viewX + portalLayout.viewWidth * localX,
       portalLayout.webglViewY + portalLayout.viewHeight * localY,
     );
+    const behind = portalRead(0.25, 0.3);
+    redMesh.position.set(-2, -0.8, -4);
+    const frontLayout = video.I_RenderView(portalScene, testCamera);
+    const front = readGl(
+      frontLayout.viewX + frontLayout.viewWidth * 0.25,
+      frontLayout.webglViewY + frontLayout.viewHeight * 0.3,
+    );
     const skyPortalMask = {
       productionPortalCount: skyPortalCount,
+      depthOccluderCount: skyDepthOccluderCount,
+      invalidDepthOccluderCount: invalidSkyDepthOccluderCount,
       unmaskedSkyMeshCount,
       wrongSideSkyMeshCount,
       seamUpdate: skySeamUpdate,
@@ -568,7 +598,8 @@ try {
       sky: portalRead(0.25, 0.7),
       expectedSky: rowPixel(sourceIndex, 0),
       void: portalRead(0.75, 0.7),
-      behind: portalRead(0.25, 0.3),
+      behind,
+      front,
       glError: gl.getError(),
       expectedGlError: gl.NO_ERROR,
     };
@@ -671,6 +702,8 @@ try {
   const skyPortalMask = result.skyPortalMask;
   if (skyPortalMask.productionPortalCount === 0 ||
       skyPortalMask.unmaskedSkyMeshCount !== 0 ||
+      skyPortalMask.depthOccluderCount !== skyPortalMask.productionPortalCount ||
+      skyPortalMask.invalidDepthOccluderCount !== 0 ||
       skyPortalMask.wrongSideSkyMeshCount !== 0 ||
       skyPortalMask.seamUpdate === null ||
       skyPortalMask.seamUpdate.candidates !== 16 ||
@@ -686,7 +719,8 @@ try {
       skyPortalMask.depthWrite !== false ||
       !pixelsEqual(skyPortalMask.sky, skyPortalMask.expectedSky) ||
       !pixelsEqual(skyPortalMask.void, skyPortalMask.clear) ||
-      !pixelsEqual(skyPortalMask.behind, [255, 0, 0, 255]) ||
+      !pixelsEqual(skyPortalMask.behind, skyPortalMask.expectedSky) ||
+      !pixelsEqual(skyPortalMask.front, [255, 0, 0, 255]) ||
       skyPortalMask.glError !== skyPortalMask.expectedGlError) {
     failures.push(`sky portal masking mismatch: ${JSON.stringify(skyPortalMask)}`);
   }
