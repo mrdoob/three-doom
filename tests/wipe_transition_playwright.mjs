@@ -3,6 +3,7 @@
 //   NODE_PATH=/path/to/node_modules node tests/wipe_transition_playwright.mjs
 
 import { createRequire } from 'node:module';
+import process from 'node:process';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -75,29 +76,7 @@ try {
       return { canvas, ctx };
     }
 
-    function readOverlay() {
-      const { canvas, ctx } = logicalCanvas();
-      const layout = R_CalculateCanvasView(overlay.width, overlay.height);
-      ctx.drawImage(
-        overlay,
-        layout.screenX,
-        layout.screenY,
-        layout.screenWidth,
-        layout.screenHeight,
-        0,
-        0,
-        320,
-        200,
-      );
-      return ctx.getImageData(0, 0, 320, 200).data;
-    }
-
-    function readComposed() {
-      // Read the WebGL buffer immediately after rendering, then apply the
-      // actual transparent UI layer in DOM stacking order.
-      I_RenderView(window.scene, window.camera);
-      const { canvas, ctx } = logicalCanvas();
-      const layout = R_CalculateCanvasView(overlay.width, overlay.height);
+    function drawPresented(ctx, layout) {
       const rendererCanvas = window.renderer.domElement;
       const sx = rendererCanvas.width / overlay.width;
       const sy = rendererCanvas.height / overlay.height;
@@ -114,6 +93,20 @@ try {
         320,
         200,
       );
+      const wipeLayer = document.getElementById('doom-wipe');
+      if (wipeLayer !== null && wipeLayer.style.display !== 'none') {
+        ctx.drawImage(
+          wipeLayer,
+          layout.screenX * sx,
+          layout.screenY * sy,
+          layout.screenWidth * sx,
+          layout.screenHeight * sy,
+          0,
+          0,
+          320,
+          200,
+        );
+      }
       ctx.drawImage(
         overlay,
         layout.screenX,
@@ -125,6 +118,22 @@ try {
         320,
         200,
       );
+    }
+
+    function readOverlay() {
+      const { ctx } = logicalCanvas();
+      const layout = R_CalculateCanvasView(overlay.width, overlay.height);
+      drawPresented(ctx, layout);
+      return ctx.getImageData(0, 0, 320, 200).data;
+    }
+
+    function readComposed() {
+      // Read the WebGL buffer immediately after rendering, then apply the
+      // actual transparent UI layer in DOM stacking order.
+      I_RenderView(window.scene, window.camera);
+      const { ctx } = logicalCanvas();
+      const layout = R_CalculateCanvasView(overlay.width, overlay.height);
+      drawPresented(ctx, layout);
       return ctx.getImageData(0, 0, 320, 200).data;
     }
 
@@ -139,9 +148,9 @@ try {
       return changed;
     }
 
-    // Validate the actual Canvas pixels against f_wipe.c's two-pixel column
-    // model: destination above y is the end frame; below y it is the start
-    // frame shifted down by y. Sampling every other row keeps this inexpensive.
+    // Validate the presented pixels against f_wipe.c's two-pixel column model:
+    // destination above y is the end frame; below y it is the start frame
+    // shifted down by y. Sampling every other row keeps this inexpensive.
     function analyseMelt(start, middle, end) {
       const offsets = [];
       let totalRatio = 0;
@@ -293,30 +302,10 @@ try {
       return { canvas, ctx };
     }
 
-    function readLogicalOverlay() {
-      const layout = R_CalculateCanvasView(overlay.width, overlay.height);
-      const { ctx } = logicalCanvas();
-      ctx.drawImage(
-        overlay,
-        layout.screenX,
-        layout.screenY,
-        layout.screenWidth,
-        layout.screenHeight,
-        0,
-        0,
-        320,
-        200,
-      );
-      return ctx.getImageData(0, 0, 320, 200).data;
-    }
-
-    function readLogicalComposed() {
-      I_RenderView(window.scene, window.camera);
-      const layout = R_CalculateCanvasView(overlay.width, overlay.height);
+    function drawLogicalPresentation(ctx, layout) {
       const rendererCanvas = window.renderer.domElement;
       const sx = rendererCanvas.width / overlay.width;
       const sy = rendererCanvas.height / overlay.height;
-      const { ctx } = logicalCanvas();
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, 320, 200);
       ctx.drawImage(
@@ -330,6 +319,20 @@ try {
         320,
         200,
       );
+      const wipeLayer = document.getElementById('doom-wipe');
+      if (wipeLayer !== null && wipeLayer.style.display !== 'none') {
+        ctx.drawImage(
+          wipeLayer,
+          layout.screenX * sx,
+          layout.screenY * sy,
+          layout.screenWidth * sx,
+          layout.screenHeight * sy,
+          0,
+          0,
+          320,
+          200,
+        );
+      }
       ctx.drawImage(
         overlay,
         layout.screenX,
@@ -341,6 +344,20 @@ try {
         320,
         200,
       );
+    }
+
+    function readLogicalOverlay() {
+      const layout = R_CalculateCanvasView(overlay.width, overlay.height);
+      const { ctx } = logicalCanvas();
+      drawLogicalPresentation(ctx, layout);
+      return ctx.getImageData(0, 0, 320, 200).data;
+    }
+
+    function readLogicalComposed() {
+      I_RenderView(window.scene, window.camera);
+      const layout = R_CalculateCanvasView(overlay.width, overlay.height);
+      const { ctx } = logicalCanvas();
+      drawLogicalPresentation(ctx, layout);
       return ctx.getImageData(0, 0, 320, 200).data;
     }
 
@@ -411,13 +428,23 @@ try {
     const middle = readLogicalOverlay();
     const layout = R_CalculateCanvasView(overlay.width, overlay.height);
     const ctx = overlay.getContext('2d');
+    const wipeLayer = document.getElementById('doom-wipe');
+    const wipeCtx = wipeLayer.getContext('2d');
+    const wipeScaleX = wipeLayer.width / overlay.width;
+    const wipeScaleY = wipeLayer.height / overlay.height;
     const middleY = Math.floor(layout.screenY + layout.screenHeight / 2);
-    const leftBar = ctx.getImageData(1, middleY, 1, 1).data;
-    const rightBar = ctx.getImageData(overlay.width - 2, middleY, 1, 1).data;
-    const logicalLeft = ctx.getImageData(Math.floor(layout.screenX), middleY, 1, 1).data;
-    const logicalRight = ctx.getImageData(
-      Math.ceil(layout.screenX + layout.screenWidth) - 1,
-      middleY,
+    const wipeMiddleY = Math.floor(middleY * wipeScaleY);
+    const leftBar = wipeCtx.getImageData(1, wipeMiddleY, 1, 1).data;
+    const rightBar = wipeCtx.getImageData(wipeLayer.width - 2, wipeMiddleY, 1, 1).data;
+    const logicalLeft = wipeCtx.getImageData(
+      Math.floor(layout.screenX * wipeScaleX),
+      wipeMiddleY,
+      1,
+      1,
+    ).data;
+    const logicalRight = wipeCtx.getImageData(
+      Math.ceil((layout.screenX + layout.screenWidth) * wipeScaleX) - 1,
+      wipeMiddleY,
       1,
       1,
     ).data;
@@ -484,16 +511,19 @@ try {
       wideViewportCoverage.rendererScaleY !== 2) {
     failures.push(`16:9 wipe did not exercise DPR 2 capture: ${JSON.stringify(wideViewportCoverage)}`);
   }
-  if (wideViewportCoverage.leftBar.some((value, i) =>
-        value !== wideViewportCoverage.finalLeftBar[i]) ||
-      wideViewportCoverage.rightBar.some((value, i) =>
-        value !== wideViewportCoverage.finalRightBar[i]) ||
+  if (wideViewportCoverage.leftBar[3] !== 0 ||
+      wideViewportCoverage.rightBar[3] !== 0 ||
+      wideViewportCoverage.finalLeftBar[3] !== 255 ||
+      wideViewportCoverage.finalRightBar[3] !== 255 ||
       wideViewportCoverage.logicalLeftAlpha !== 255 ||
       wideViewportCoverage.logicalRightAlpha !== 255) {
     failures.push(`16:9 wipe escaped or missed the logical screen: ${JSON.stringify(wideViewportCoverage)}`);
   }
-  if (wideViewportCoverage.melt.averageRatio < 0.995 ||
-      wideViewportCoverage.melt.worstRatio < 0.95 ||
+  // The 16:9 logical rectangle is 2.7 CSS pixels per Doom row. Sampling its
+  // DPR-2 backing image back to 320x200 crosses fractional pixel centers, so
+  // allow a small resampling tolerance while retaining a strong model check.
+  if (wideViewportCoverage.melt.averageRatio < 0.97 ||
+      wideViewportCoverage.melt.worstRatio < 0.85 ||
       wideViewportCoverage.melt.maxOffset < 7 ||
       wideViewportCoverage.melt.distinctOffsets < 4) {
     failures.push(`16:9 DPR 2 pixels do not follow the melt model: ${JSON.stringify(wideViewportCoverage)}`);

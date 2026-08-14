@@ -3,6 +3,7 @@
 // visible in the transparent bars around Doom's centered 320x200 page.
 
 import { createRequire } from 'node:module';
+import process from 'node:process';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -36,6 +37,7 @@ try {
     const THREE = await import('three');
     const dMain = await import('/src/d_main.js');
     const doomstat = await import('/src/doomstat.js');
+    const wipe = await import('/src/f_wipe.js');
     const overlay = document.getElementById('overlay');
 
     // Always wins if the retained level scene is accidentally rendered.
@@ -53,10 +55,12 @@ try {
     window.scene.add(sentinel);
 
     dMain.D_StartTitle();
-    for (let i = 0; i < 120 && doomstat.gamestate !== 3; i++) {
+    for (let i = 0; i < 180 &&
+         (doomstat.gamestate !== 3 || wipe.wipe_isActive()); i++) {
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
     if (doomstat.gamestate !== 3) throw new Error('title screen did not start');
+    if (wipe.wipe_isActive()) throw new Error('title-screen wipe did not finish');
 
     const gl = window.renderer.getContext();
     const pixel = new Uint8Array(4);

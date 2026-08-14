@@ -345,11 +345,12 @@ function D_Display() {
       _fwipeStep(0, 0, 0, SCREENWIDTH, SCREENHEIGHT, tics);
       _wipeLastTime = now;
     }
+    const wipeStillActive = _fwipeActive !== null && _fwipeActive();
     const cw = _overlayCanvas.width, ch = _overlayCanvas.height;
-    if (_fwipeDraw !== null) {
-      // The retained wipe is Doom's canonical 320x200 screen. Present it only
-      // inside the centered logical-screen rectangle so browser letterbox
-      // bars are neither resampled into melt columns nor overwritten.
+    if (wipeStillActive && _fwipeDraw !== null) {
+      // The retained pixels stay at presentation resolution, while the melt
+      // geometry remains Doom's canonical 320x200 model. Confine it to the
+      // logical-screen rectangle so browser letterbox bars are untouched.
       const layout = R_CalculateCanvasView(cw, ch);
       _fwipeDraw(
         overlay,
@@ -359,7 +360,7 @@ function D_Display() {
         layout.screenHeight,
       );
     }
-    if (_menuDrawer !== null) {
+    if (wipeStillActive && _menuDrawer !== null) {
       _menuDrawer(overlay, 0, 0, _overlayCanvas.width, _overlayCanvas.height);
     }
   }

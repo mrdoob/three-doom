@@ -23,15 +23,23 @@ Deno.test('D_Display captures, composes, starts, and steps wipes in reference or
   const firstMenu = display.indexOf('_menuDrawer(overlay, 0, 0, _overlayCanvas.width, _overlayCanvas.height)', pause);
   const endScreen = display.indexOf('_fwipeEnd(0, 0, SCREENWIDTH, SCREENHEIGHT)', firstMenu);
   const step = display.indexOf('_fwipeStep(0, 0, 0, SCREENWIDTH, SCREENHEIGHT, tics)', endScreen);
+  const completionGate = display.indexOf(
+    'const wipeStillActive = _fwipeActive !== null && _fwipeActive()',
+    step,
+  );
   const draw = display.indexOf('_fwipeDraw(', step);
   const secondMenu = display.indexOf('_menuDrawer(overlay, 0, 0, _overlayCanvas.width, _overlayCanvas.height)', firstMenu + 1);
   const record = display.indexOf('_fwipeRecord()', draw);
 
   if (start < 0 || end < 0 || startScreen < 0 || palette <= startScreen ||
       stateDrawer <= palette || pause <= stateDrawer || firstMenu <= pause ||
-      endScreen <= firstMenu || step <= endScreen || draw <= step ||
+      endScreen <= firstMenu || step <= endScreen || completionGate <= step ||
+      draw <= completionGate ||
       secondMenu <= draw || record <= secondMenu) {
     throw new Error('D_Display wipe order is not start -> draw/UI -> end -> step -> wipe/menu -> record');
+  }
+  if (!display.slice(completionGate, draw).includes('if (wipeStillActive')) {
+    throw new Error('completed wipe still clears the fully drawn destination frame');
   }
 
   const loopStart = mainSource.indexOf('async function D_DoomLoop()');
@@ -76,7 +84,7 @@ Deno.test('wipe snapshots compose WebGL below the Canvas overlay', () => {
     wipeSource.indexOf('function _captureComposedFrame'),
     wipeSource.indexOf('function _copyCanvas'),
   );
-  const webgl = capture.indexOf('ctx.drawImage(r.domElement');
+  const webgl = capture.indexOf('ctx.drawImage(\n          rendererCanvas');
   const overlay = capture.indexOf('ctx.drawImage(overlay');
   if (webgl < 0 || overlay <= webgl) {
     throw new Error('composed wipe frame does not draw WebGL before the UI overlay');
@@ -85,8 +93,8 @@ Deno.test('wipe snapshots compose WebGL below the Canvas overlay', () => {
       !wipeSource.includes('_presentCanvas === null')) {
     throw new Error('wipe start does not retain the last completed composed frame');
   }
-  if (!capture.includes('layout.screenX * sx') ||
-      !capture.includes('layout.screenY * sy') ||
+  if (!capture.includes('layout.screenX * scaleX') ||
+      !capture.includes('layout.screenY * scaleY') ||
       !capture.includes('layout.screenX,') ||
       !capture.includes('layout.screenY,')) {
     throw new Error('wipe capture does not crop WebGL and Canvas to the logical screen');
