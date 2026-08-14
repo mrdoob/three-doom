@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { camera, renderer, scene, I_RenderView } from './i_video.js';
-import { players, viewangleoffset } from './doomstat.js';
+import { leveltime, players, viewangleoffset } from './doomstat.js';
 import { R_BuildWalls, R_ShutdownWalls } from './r_segs.js';
 import { R_BuildPlanes, R_ShutdownPlanes } from './r_plane.js';
 import {
@@ -16,7 +16,7 @@ import { R_ClearMeshRegistry, R_PrecacheLevel } from './r_data.js';
 import { R_PrecachePlayerSprites } from './r_psprite.js';
 import { P_SwitchTexturePair } from './p_switch.js';
 import { R_BuildSky, R_UpdateSky, R_ShutdownSky } from './r_sky.js';
-import { R_VisibleLinedefs } from './r_bsp.js';
+import { R_ResetVisibleLinedefs, R_VisibleLinedefs } from './r_bsp.js';
 import { R_SetViewLighting } from './r_shader.js';
 import { ML_MAPPED } from './doomdata.js';
 import { powertype_t } from './doomdef.js';
@@ -28,6 +28,7 @@ import { R_RequestPspriteFuzzCapture } from './r_fuzz.js';
 let _levelRoot = null;
 
 function disposeLevelRoot() {
+  R_ResetVisibleLinedefs();
   if (_levelRoot === null) {
     if (scene !== null) delete scene.userData.doomSpriteDepthPass;
     R_ShutdownSky();
@@ -78,7 +79,7 @@ export function R_Shutdown() {
 export function R_NewMap() {
   if (_levelRoot !== null) {
     disposeLevelRoot();
-  }
+  } else R_ResetVisibleLinedefs();
   const uploadTexture = renderer !== null && typeof renderer.initTexture === 'function'
     ? (texture) => renderer.initTexture(texture)
     : null;
@@ -134,10 +135,11 @@ export function R_SetupFrame(player) {
     player.powers?.[powertype_t.pw_invisibility] ?? 0,
   ));
   const mo = player.mo;
+  const view = R_GetViewSize();
   R_SetViewLighting(
     player.extralight,
     player.fixedcolormap,
-    R_GetViewSize().scaledviewwidth,
+    view.scaledviewwidth,
   );
   // Update view origin (used by sprite rotation pick in r_things.js).
   set_thing_view(mo.x, mo.y);
@@ -148,7 +150,8 @@ export function R_SetupFrame(player) {
   camera.position.set(x, z, -y);
   // Doom BAM: angle 0 = east (+X), 90° = north (+Y). Three.js camera looks
   // down -Z at rotation 0; rotating around Y by -π/2 looks toward +X.
-  const ang = bamToRad((mo.angle + viewangleoffset) >>> 0);
+  const viewangle = (mo.angle + viewangleoffset) >>> 0;
+  const ang = bamToRad(viewangle);
   camera.rotation.order = 'YXZ';
   camera.rotation.set(0, ang - Math.PI / 2, 0);
 
@@ -156,12 +159,13 @@ export function R_SetupFrame(player) {
   // front-to-back BSP solid-column clip. The retained renderer does not need
   // that walk for drawing, so reproduce its visibility decision solely for
   // automap fog-of-war.
-  const view = R_GetViewSize();
   for (const linedef of R_VisibleLinedefs(
     mo.x,
     mo.y,
-    (mo.angle + viewangleoffset) >>> 0,
+    viewangle,
     view.viewwidth,
+    leveltime,
+    player,
   )) {
     linedef.flags |= ML_MAPPED;
   }

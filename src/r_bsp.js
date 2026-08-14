@@ -6,10 +6,25 @@
 import { nodes, numnodes, subsectors, segs } from './p_setup.js';
 import { NF_SUBSECTOR } from './doomdata.js';
 import { FixedMul } from './m_fixed.js';
-import { R_CollectVisibleLinedefs } from './r_visibility_logic.js';
+import {
+  R_CollectVisibleLinedefs, R_CreateVisibilityScratch,
+} from './r_visibility_logic.js';
 
 export let firstseg = null;
 export let curline  = null;
+
+const _visibilityScratch = R_CreateVisibilityScratch();
+let _visibilityCacheValid = false;
+let _cachedViewX = 0;
+let _cachedViewY = 0;
+let _cachedViewAngle = 0;
+let _cachedViewWidth = 0;
+let _cachedSimulationState = null;
+let _cachedObserver = null;
+let _cachedNodes = null;
+let _cachedSubsectors = null;
+let _cachedSegs = null;
+let _cachedNumNodes = -1;
 
 // R_PointOnSide — ported from r_bsp.c. Returns 0 if (x,y) is on the right
 // side of the node's partition line, 1 if on the left. All fixed-point.
@@ -105,11 +120,51 @@ export function R_PointToAngle2(x1, y1, x2, y2) {
 // Visibility-only counterpart to the classic render-time BSP walk. Three.js
 // retains the whole map, but automap fog-of-war still needs the linedefs which
 // survived Doom's front-to-back horizontal solid-span clipping.
-export function R_VisibleLinedefs(viewx, viewy, viewangle, viewwidth) {
+export function R_ResetVisibleLinedefs() {
+  _visibilityCacheValid = false;
+  _cachedSimulationState = null;
+  _cachedObserver = null;
+  _cachedNodes = null;
+  _cachedSubsectors = null;
+  _cachedSegs = null;
+  _visibilityScratch.visible.clear();
+  _visibilityScratch.solidRanges.length = 0;
+  _visibilityScratch.stack.length = 0;
+}
+
+export function R_VisibleLinedefs(
+  viewx,
+  viewy,
+  viewangle,
+  viewwidth,
+  simulationState = null,
+  observer = null,
+) {
+  const angle = viewangle >>> 0;
+  if (_visibilityCacheValid &&
+      viewx === _cachedViewX && viewy === _cachedViewY &&
+      angle === _cachedViewAngle && viewwidth === _cachedViewWidth &&
+      simulationState === _cachedSimulationState && observer === _cachedObserver &&
+      nodes === _cachedNodes && subsectors === _cachedSubsectors && segs === _cachedSegs &&
+      numnodes === _cachedNumNodes) {
+    return _visibilityScratch.visible;
+  }
+
+  _cachedViewX = viewx;
+  _cachedViewY = viewy;
+  _cachedViewAngle = angle;
+  _cachedViewWidth = viewwidth;
+  _cachedSimulationState = simulationState;
+  _cachedObserver = observer;
+  _cachedNodes = nodes;
+  _cachedSubsectors = subsectors;
+  _cachedSegs = segs;
+  _cachedNumNodes = numnodes;
+  _visibilityCacheValid = true;
   return R_CollectVisibleLinedefs({
     viewx,
     viewy,
-    viewangle,
+    viewangle: angle,
     viewwidth,
     nodes,
     numnodes,
@@ -117,6 +172,7 @@ export function R_VisibleLinedefs(viewx, viewy, viewangle, viewwidth) {
     segs,
     pointOnSide: R_PointOnSide,
     pointToAngle2: R_PointToAngle2,
+    scratch: _visibilityScratch,
   });
 }
 

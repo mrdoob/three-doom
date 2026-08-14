@@ -61,10 +61,10 @@ export function R_ViewAngleToX(angle, mapping) {
   return mapping.viewangletox[fine];
 }
 
-function clippedColumnRange(angle1, angle2, viewangle, mapping) {
+function clippedColumnRange(angle1, angle2, viewangle, mapping, output) {
   const span = (angle1 - angle2) >>> 0;
   // Back side of the directed seg, exactly as r_bsp.c:R_AddLine.
-  if (span >= ANG180) return null;
+  if (span >= ANG180) return false;
 
   let relative1 = (angle1 - viewangle) >>> 0;
   let relative2 = (angle2 - viewangle) >>> 0;
@@ -74,46 +74,58 @@ function clippedColumnRange(angle1, angle2, viewangle, mapping) {
   let clipped = (relative1 + clipangle) >>> 0;
   if (clipped > doubleClip) {
     clipped = (clipped - doubleClip) >>> 0;
-    if (clipped >= span) return null;
+    if (clipped >= span) return false;
     relative1 = clipangle;
   }
 
   clipped = (clipangle - relative2) >>> 0;
   if (clipped > doubleClip) {
     clipped = (clipped - doubleClip) >>> 0;
-    if (clipped >= span) return null;
+    if (clipped >= span) return false;
     relative2 = (-clipangle) >>> 0;
   }
 
   const x1 = R_ViewAngleToX(relative1, mapping);
   const x2 = R_ViewAngleToX(relative2, mapping);
-  if (x1 >= x2) return null;
-  return { first: x1, last: x2 - 1 };
+  if (x1 >= x2) return false;
+  output.first = x1;
+  output.last = x2 - 1;
+  return true;
 }
 
 function rangeHasVisibleColumn(ranges, first, last) {
-  for (const range of ranges) {
-    if (range.last < first) continue;
-    if (range.first > first) return true;
-    if (range.last >= last) return false;
-    first = range.last + 1;
+  // Flat [first, last, ...] storage keeps the production scratch allocation-
+  // free while preserving the sorted, non-overlapping clip-list invariant.
+  for (let i = 0; i < ranges.length; i += 2) {
+    if (ranges[i + 1] < first) continue;
+    if (ranges[i] > first) return true;
+    if (ranges[i + 1] >= last) return false;
+    first = ranges[i + 1] + 1;
   }
   return first <= last;
 }
 
 function addSolidRange(ranges, first, last) {
   let insert = 0;
-  while (insert < ranges.length && ranges[insert].last < first - 1) insert++;
+  while (insert < ranges.length && ranges[insert + 1] < first - 1) insert += 2;
 
   let mergedFirst = first;
   let mergedLast = last;
   let removeEnd = insert;
-  while (removeEnd < ranges.length && ranges[removeEnd].first <= mergedLast + 1) {
-    mergedFirst = Math.min(mergedFirst, ranges[removeEnd].first);
-    mergedLast = Math.max(mergedLast, ranges[removeEnd].last);
-    removeEnd++;
+  while (removeEnd < ranges.length && ranges[removeEnd] <= mergedLast + 1) {
+    mergedFirst = Math.min(mergedFirst, ranges[removeEnd]);
+    mergedLast = Math.max(mergedLast, ranges[removeEnd + 1]);
+    removeEnd += 2;
   }
-  ranges.splice(insert, removeEnd - insert, { first: mergedFirst, last: mergedLast });
+  const oldLength = ranges.length;
+  const newLength = oldLength - (removeEnd - insert) + 2;
+  // Shift the untouched tail in place. Grow first for rightward insertion;
+  // shrink only after a leftward merge so copyWithin can still read the tail.
+  if (newLength > oldLength) ranges.length = newLength;
+  ranges.copyWithin(insert + 2, removeEnd, oldLength);
+  ranges.length = newLength;
+  ranges[insert] = mergedFirst;
+  ranges[insert + 1] = mergedLast;
 }
 
 function classifySeg(seg) {
@@ -140,6 +152,15 @@ function classifySeg(seg) {
  * porting R_CheckBBox: the same solid-column list rejects a fully hidden seg,
  * while keeping this visibility-only path independent of renderer tables.
  */
+export function R_CreateVisibilityScratch() {
+  return {
+    visible: new Set(),
+    solidRanges: [],
+    stack: [],
+    clippedRange: { first: 0, last: 0 },
+  };
+}
+
 export function R_CollectVisibleLinedefs({
   viewx,
   viewy,
@@ -151,15 +172,25 @@ export function R_CollectVisibleLinedefs({
   segs,
   pointOnSide,
   pointToAngle2,
+  scratch = null,
 }) {
-  const visible = new Set();
+  // Pure callers receive independent output by default. r_bsp supplies one
+  // private scratch object so the production per-view walk reuses its Set,
+  // traversal stack, clip ranges, and clipped-range record.
+  const work = scratch ?? R_CreateVisibilityScratch();
+  const visible = work.visible;
+  const solidRanges = work.solidRanges;
+  const stack = work.stack;
+  const range = work.clippedRange;
+  visible.clear();
+  solidRanges.length = 0;
+  stack.length = 0;
   if (!Number.isInteger(viewwidth) || viewwidth <= 0 ||
       !Array.isArray(subsectors) || !Array.isArray(segs) ||
       subsectors.length === 0) return visible;
 
-  const solidRanges = [];
   const mapping = R_BuildViewAngleMapping(viewwidth);
-  const stack = [numnodes === 0 ? NF_SUBSECTOR : numnodes - 1];
+  stack.push(numnodes === 0 ? NF_SUBSECTOR : numnodes - 1);
   while (stack.length !== 0) {
     const index = stack.pop();
     if ((index & NF_SUBSECTOR) === 0) {
@@ -178,13 +209,13 @@ export function R_CollectVisibleLinedefs({
     for (let i = 0; i < subsector.numlines; i++) {
       const seg = segs[subsector.firstline + i];
       if (seg === undefined || seg === null || seg.linedef === null) continue;
-      const range = clippedColumnRange(
+      if (!clippedColumnRange(
         pointToAngle2(viewx, viewy, seg.v1.x, seg.v1.y),
         pointToAngle2(viewx, viewy, seg.v2.x, seg.v2.y),
         viewangle >>> 0,
         mapping,
-      );
-      if (range === null) continue;
+        range,
+      )) continue;
 
       const kind = classifySeg(seg);
       if (kind === 'empty') continue;

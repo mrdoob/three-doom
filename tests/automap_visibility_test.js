@@ -3,6 +3,7 @@ import { ANG90, ANG180 } from '../src/tables.js';
 import {
   R_BuildViewAngleMapping,
   R_CollectVisibleLinedefs,
+  R_CreateVisibilityScratch,
   R_ViewAngleToX,
 } from '../src/r_visibility_logic.js';
 
@@ -151,4 +152,62 @@ Deno.test('automap visibility uses native fine-angle and fencepost mapping', () 
       previous = x;
     }
   }
+});
+
+Deno.test('production visibility scratch reuses storage without retaining stale lines', () => {
+  const front = sector();
+  const firstLine = line('first');
+  const secondLine = line('second');
+  const scratch = R_CreateVisibilityScratch();
+  const visibleIdentity = scratch.visible;
+  const stackIdentity = scratch.stack;
+  const rangesIdentity = scratch.solidRanges;
+
+  const run = (linedef, y) => R_CollectVisibleLinedefs({
+    viewx: 0,
+    viewy: 0,
+    viewangle: 0,
+    viewwidth: 320,
+    nodes: [],
+    numnodes: 0,
+    subsectors: [{ firstline: 0, numlines: 1 }],
+    segs: [seg(vertex(64, y), vertex(64, -y), linedef, front)],
+    pointOnSide: () => 0,
+    pointToAngle2: angleFrom,
+    scratch,
+  });
+
+  const first = run(firstLine, 32);
+  assert(first === visibleIdentity && first.has(firstLine),
+    'first scratch walk did not use its retained Set');
+  const second = run(secondLine, 24);
+  assert(second === visibleIdentity && second.has(secondLine),
+    'second scratch walk replaced its retained Set');
+  assert(!second.has(firstLine), 'scratch walk retained a stale linedef');
+  assert(scratch.stack === stackIdentity && scratch.stack.length === 0,
+    'scratch walk replaced or retained its traversal stack');
+  assert(scratch.solidRanges === rangesIdentity,
+    'scratch walk replaced its solid-range storage');
+
+  const independent = collect([
+    seg(vertex(64, 16), vertex(64, -16), firstLine, front),
+  ], [{ firstline: 0, numlines: 1 }]);
+  assert(independent !== scratch.visible && independent.has(firstLine),
+    'default pure call leaked the production scratch Set');
+});
+
+Deno.test('production discovery reuses view state and allocation-free range storage', async () => {
+  const main = await Deno.readTextFile(new URL('../src/r_main.js', import.meta.url));
+  const logic = await Deno.readTextFile(new URL('../src/r_visibility_logic.js', import.meta.url));
+  const setup = main.slice(
+    main.indexOf('export function R_SetupFrame'),
+    main.indexOf('// R_RenderPlayerView'),
+  );
+  const viewReads = setup.match(/R_GetViewSize\(\)/g) ?? [];
+  assert(viewReads.length === 1,
+    `R_SetupFrame reads view size ${viewReads.length} times`);
+  assert(setup.includes('view.viewwidth,\n    leveltime,\n    player,'),
+    'production discovery cache lacks simulation or spy-player identity');
+  assert(!logic.includes('ranges.splice(') && logic.includes('ranges.copyWithin('),
+    'solid clip ranges still allocate removed arrays in the hot path');
 });
