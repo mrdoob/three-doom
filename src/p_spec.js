@@ -73,6 +73,13 @@ export function P_SpawnSpecials() {
   for (let i = 0; i < numlines; i++) {
     if (lines[i].special === 48) _scrollLines.push(lines[i]);
   }
+
+  // p_spec.c:1357-1358 — button timers belong to the map that created them.
+  // Retire every old slot only after scanning the new map's specials, matching
+  // the native P_SpawnSpecials lifecycle.
+  if (_PSwitch !== null && typeof _PSwitch.P_ResetButtons === 'function') {
+    _PSwitch.P_ResetButtons();
+  }
 }
 
 // Per-tic update — drive switch button countdowns.

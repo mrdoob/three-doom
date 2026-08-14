@@ -6,7 +6,11 @@
 import { sides } from './p_setup.js';
 import { R_CheckTextureNumForName } from './r_data.js';
 import { I_Error } from './i_system.js';
-import { P_StartButtonInList } from './p_switch_logic.js';
+import {
+  P_ResetButtonsInList,
+  P_StartButtonInList,
+  P_UpdateButtonsInList,
+} from './p_switch_logic.js';
 
 // Doom's alphSwitchList pairs (name1 = off, name2 = on, episode).
 // Mirrors p_switch.c: episode 1 = Doom shareware, episode 2 = Doom registered+,
@@ -92,23 +96,22 @@ export function P_StartButton(line, w, texture, time) {
   P_StartButtonInList(buttonlist, line, w, texture, time, I_Error);
 }
 
+export function P_ResetButtons() {
+  P_ResetButtonsInList(buttonlist);
+}
+
 // Per-tic countdown — call from P_UpdateSpecials.
 export function P_UpdateButtons() {
-  for (const b of buttonlist) {
-    if (b.btimer === 0) continue;
-    b.btimer--;
-    if (b.btimer === 0) {
-      const sd = sides[b.line.sidenum[0]];
-      if      (b.where === top)    sd.toptexture    = b.btexture;
-      else if (b.where === middle) sd.midtexture    = b.btexture;
-      else if (b.where === bottom) sd.bottomtexture = b.btexture;
-      if (_R_SetSwitchTexture !== null) _R_SetSwitchTexture(b.line, b.where, b.btexture);
-      // p_spec.c:1151 — button-return click is positional from the switch's
-      // sector soundorg (C stores it on the button; we read it off the line).
-      if (_S !== null) _S.S_StartSound(b.line.frontsector.soundorg, 23 /*sfx_swtchn*/);
-      b.line = null;
-    }
-  }
+  P_UpdateButtonsInList(buttonlist, (b) => {
+    const sd = sides[b.line.sidenum[0]];
+    if      (b.where === top)    sd.toptexture    = b.btexture;
+    else if (b.where === middle) sd.midtexture    = b.btexture;
+    else if (b.where === bottom) sd.bottomtexture = b.btexture;
+    if (_R_SetSwitchTexture !== null) _R_SetSwitchTexture(b.line, b.where, b.btexture);
+    // p_spec.c:1151 — button-return click is positional from the switch's
+    // sector soundorg (C stores it on the button; we read it off the line).
+    if (_S !== null) _S.S_StartSound(b.line.frontsector.soundorg, 23 /*sfx_swtchn*/);
+  });
 }
 
 // p_switch.c:194 P_ChangeSwitchTexture. The C source plays the switch sound
