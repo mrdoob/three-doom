@@ -14,12 +14,11 @@ export const SPRITE_MF_SHADOW = 0x40000;
 export const SPRITE_MF_TRANSLATION = 0x0c000000;
 export const SPRITE_MF_TRANSSHIFT = 26;
 
-// The WebGL renderer cannot reproduce fuzzcolfunc's screen-space readback, so
-// shadow sprites use one dark PLAYPAL index with translucent shimmer.  Canvas
-// psprites deliberately use the same approximation and constants.
+// A shadow canvas cache still needs some RGB value under its alpha mask even
+// though the real fuzz compositor ignores that colour. Keep the historical
+// index for cache/tests and direct-material diagnostics; production world and
+// psprite rendering samples the composed screen instead.
 export const SPRITE_SHADOW_PALETTE_INDEX = 5;
-export const SPRITE_SHADOW_OPACITY = 0.33;
-export const SPRITE_SHADOW_FLICKER = 0.09;
 
 // A negative result is the explicit shadow/fuzz path; non-negative results
 // are literal COLORMAP rows.
@@ -68,6 +67,8 @@ export function R_PspriteColormapRow(
 // PLAYPAL is intentionally not consulted here: the returned palette index is
 // resolved through the active PLAYPAL only when the Canvas cache is painted.
 export function R_RemapPspriteIndex(sourceIndex, colormapRow, colormaps) {
+  // Only the alpha channel of this cached shadow image is consumed by the
+  // framebuffer fuzz path.
   if (colormapRow === PSPRITE_SHADOW_ROW) return SPRITE_SHADOW_PALETTE_INDEX;
   return colormaps[colormapRow * 256 + sourceIndex];
 }

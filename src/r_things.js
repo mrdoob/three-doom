@@ -22,8 +22,6 @@ import {
   R_PlayerTranslationFromFlags,
   SPRITE_FF_FULLBRIGHT,
   SPRITE_MF_SHADOW,
-  SPRITE_SHADOW_FLICKER,
-  SPRITE_SHADOW_OPACITY,
   SPRITE_SHADOW_PALETTE_INDEX,
 } from './r_sprite_logic.js';
 import { R_SpriteBillboardCenterY } from './r_sprite_projection.js';
@@ -381,6 +379,7 @@ export function R_RegisterMobjSprite(mobj) {
   // Hide until R_UpdateSprites positions it — avoids a single-frame flash
   // at (0,0,0) for newly-spawned mobjs.
   sprite.visible = false;
+  sprite.userData.doomFuzz = false;
   _thingsGroup.add(sprite);
   _thingsGroup.userData.doomSpriteMaterials.push(mat);
   _liveSprites.push({ sprite, mobj, _isShadow: false });
@@ -392,15 +391,11 @@ export function R_RegisterMobjSprite(mobj) {
 const FF_FRAMEMASK  = 0x7fff;
 
 // MF_SHADOW (p_mobj.js) — the Spectre and the partial-invisibility powerup.
-// Vanilla draws these with fuzzcolfunc, a shimmering screen-space distortion
-// through a dark colormap. We can't run that screen-space pass yet, so we
-// approximate it with a dark, semi-transparent billboard that flickers and
-// jitters each frame (see R_UpdateSprites).
-const SHADOW_JITTER  = 1.5;  // vertical position shimmer, in map units
-// Below the opacity floor (SPRITE_SHADOW_OPACITY - SPRITE_SHADOW_FLICKER =
-// 0.24) so silhouette
-// texels pass, above 0 so the transparent surround is still discarded.
-const SHADOW_ALPHATEST = 0.1;
+// Vanilla draws these with fuzzcolfunc: the patch supplies only an alpha mask,
+// while each covered destination pixel samples an adjacent framebuffer row
+// through COLORMAP 6. i_video prepares that background and the sprite shader
+// performs the screen-space lookup; the billboard itself stays geometrically
+// stable and opaque.
 // Default cutout for fully opaque sprites: keep solid texels, drop the
 // transparent surround. Shared by the material constructor and the shadow
 // restore path so they can't drift apart.
@@ -475,11 +470,8 @@ export function R_UpdateSprites() {
     // floor: the support-plane pass restores only their authored overhang,
     // while retained world depth still clips it against other floors/walls.
     R_ApplySpritePatchGeometry(entry.sprite, mo, t);
-    // Fuzz shimmer: nudge the Spectre's billboard vertically each frame.
-    if (isShadow) entry.sprite.position.y += (Math.random() - 0.5) * SHADOW_JITTER;
-    // MF_SHADOW (Spectre / partial-invisibility powerup): swap the lit opaque
-    // billboard for a dark, translucent, shimmering one. The flag can toggle at
-    // runtime (the powerup wears off), so switch material modes on change.
+    // MF_SHADOW (Spectre / partial-invisibility powerup): switch to the
+    // framebuffer-sampling fuzz branch. The flag can toggle at runtime.
     const mat = entry.sprite.material;
     const uniforms = mat.uniforms;
     // Only the source interval physically below the actor's current support
@@ -498,14 +490,10 @@ export function R_UpdateSprites() {
     }
     if (isShadow !== entry._isShadow) {
       if (isShadow) {
-        mat.depthWrite = false; // translucent: don't occlude what's behind it
         uniforms.shadow.value = true;
-        // The default alpha cutoff (0.5) compares against texAlpha * opacity.
-        // SPRITE_SHADOW_OPACITY (~0.33) puts every silhouette texel below the
-        // default 0.5 cutoff and would discard the Spectre entirely. Drop the
-        // threshold below the flickering opacity floor so the silhouette survives,
-        // while the fully transparent surround (alpha 0) is still culled.
-        uniforms.alphaCutoff.value = SHADOW_ALPHATEST;
+        uniforms.opacity.value = 1;
+        mat.depthWrite = true;
+        uniforms.alphaCutoff.value = SPRITE_ALPHATEST;
       } else {
         uniforms.shadow.value = false;
         uniforms.opacity.value = 1;
@@ -515,13 +503,10 @@ export function R_UpdateSprites() {
         entry._lastFullbright = null;
       }
       entry._isShadow = isShadow;
+      entry.sprite.userData.doomFuzz = isShadow;
     }
 
-    if (isShadow) {
-      // Per-frame flicker mimics fuzzcolfunc's shimmering static.
-      uniforms.opacity.value = SPRITE_SHADOW_OPACITY
-        + (Math.random() - 0.5) * 2 * SPRITE_SHADOW_FLICKER;
-    } else {
+    if (!isShadow) {
       // R_AddSprites selects a sector bucket before R_ProjectSprite applies
       // fixed/fullbright/distance precedence in the shader.
       const fullbright = (mo.frame & SPRITE_FF_FULLBRIGHT) !== 0;

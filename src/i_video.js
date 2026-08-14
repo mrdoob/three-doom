@@ -17,7 +17,13 @@ import {
   V_GetActivePalette, V_InitPlaypal, V_IsPlaypalReady,
   V_PaletteCSS, V_SetPaletteIndex,
 } from './v_palette.js';
-import { R_SetPaletteIndex, R_SetPlaypal, R_ShutdownShader } from './r_shader.js';
+import {
+  paletteIndexCaptureUniform,
+  R_SetPaletteIndex,
+  R_SetPlaypal,
+  R_SetSpriteFuzzFrame,
+  R_ShutdownShader,
+} from './r_shader.js';
 import { D_DoomRafLoop } from './d_loop.js';
 import { D_ShouldInterceptDemoInput } from './d_input_logic.js';
 import {
@@ -27,6 +33,13 @@ import {
 import { I_Quit, I_RegisterQuitGraphics } from './i_system.js';
 import { I_RunCleanupSteps } from './i_shutdown.js';
 import { R_RenderRetainedLevel } from './r_sprite_depth.js';
+import {
+  R_BeginFuzzFrame,
+  R_ClearPspriteFuzzCapture,
+  R_ShutdownFuzz,
+  R_StorePspriteFuzzCapture,
+  R_TakePspriteFuzzCaptureRequest,
+} from './r_fuzz.js';
 
 // ---------- Three.js setup ----------
 export let renderer = null;
@@ -53,6 +66,30 @@ let rgbaBuffer    = null;          // ImageData for paletted-screen blits
 
 // Cached canvas for upscaling the 320x200 framebuffer.
 let scratchCanvas = null;
+
+// Logical-view-sized RGBA8 targets. Their red byte is a post-COLORMAP palette
+// index. The first holds the world with frustum-visible fuzz sprites omitted;
+// the second is allocated only for the rare world-fuzz + psprite-fuzz frame,
+// where it captures the composed world after those sprites sample the first.
+let spriteFuzzIndexTarget = null;
+let spriteFuzzComposedTarget = null;
+let spriteFuzzReadback = null;
+const spriteFuzzFrustum = new THREE.Frustum();
+const spriteFuzzProjection = new THREE.Matrix4();
+const spriteFuzzSavedViewport = new THREE.Vector4();
+const spriteFuzzSavedScissor = new THREE.Vector4();
+const spriteFuzzSavedClearColor = new THREE.Color();
+const spriteFuzzVisible = [];
+const _fuzzCaptureStats = {
+  indexPasses: 0,
+  readbacks: 0,
+  lastWorldFuzzSprites: 0,
+  lastIndexPasses: 0,
+  lastPspriteCapture: false,
+  lastComposedCapture: false,
+  lastTargetWidth: 0,
+  lastTargetHeight: 0,
+};
 
 // Cache cross-module references at module load — input handlers are a hot
 // path and `await import()` per event adds microtask latency. Dynamic import
@@ -243,6 +280,8 @@ export function I_ShutdownGraphics() {
   const ownedCamera = camera;
   const ownedOverlay = overlayCanvas;
   const ownedWebGLCanvas = _rendererClickTarget ?? ownedRenderer?.domElement ?? null;
+  const ownedSpriteFuzzIndexTarget = spriteFuzzIndexTarget;
+  const ownedSpriteFuzzComposedTarget = spriteFuzzComposedTarget;
 
   window.removeEventListener('resize', resize);
   window.removeEventListener('keydown', onKeyDown);
@@ -303,6 +342,8 @@ export function I_ShutdownGraphics() {
       cleanupErrors.push(error);
     } finally {
       try { if (ownedScene !== null) ownedScene.clear(); } catch (error) { cleanupErrors.push(error); }
+      try { ownedSpriteFuzzIndexTarget?.dispose(); } catch (error) { cleanupErrors.push(error); }
+      try { ownedSpriteFuzzComposedTarget?.dispose(); } catch (error) { cleanupErrors.push(error); }
       try {
         if (ownedOverlay !== null) {
           ownedOverlay.getContext('2d')?.clearRect(0, 0, ownedOverlay.width, ownedOverlay.height);
@@ -329,6 +370,19 @@ export function I_ShutdownGraphics() {
       overlayCanvas = null;
       overlayCtx = null;
       rgbaBuffer = null;
+      spriteFuzzIndexTarget = null;
+      spriteFuzzComposedTarget = null;
+      spriteFuzzReadback = null;
+      spriteFuzzVisible.length = 0;
+      _fuzzCaptureStats.indexPasses = 0;
+      _fuzzCaptureStats.readbacks = 0;
+      _fuzzCaptureStats.lastWorldFuzzSprites = 0;
+      _fuzzCaptureStats.lastIndexPasses = 0;
+      _fuzzCaptureStats.lastPspriteCapture = false;
+      _fuzzCaptureStats.lastComposedCapture = false;
+      _fuzzCaptureStats.lastTargetWidth = 0;
+      _fuzzCaptureStats.lastTargetHeight = 0;
+      R_ShutdownFuzz();
       try {
         if (scratchCanvas !== null) {
           scratchCanvas.width = 0;
@@ -408,16 +462,242 @@ export function I_ClearFrame() {
   renderer.setClearColor(_paletteClearColor);
 }
 
+function ensureSpriteFuzzTarget(target, width, height, name) {
+  const targetWidth = Math.max(1, width | 0);
+  const targetHeight = Math.max(1, height | 0);
+  if (target === null) {
+    target = new THREE.WebGLRenderTarget(targetWidth, targetHeight, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+    target.texture.generateMipmaps = false;
+    target.texture.colorSpace = THREE.NoColorSpace;
+    target.texture.name = name;
+  } else if (target.width !== targetWidth || target.height !== targetHeight) {
+    target.setSize(targetWidth, targetHeight);
+  }
+  // setRenderTarget uses these native target coordinates directly; avoiding a
+  // public setViewport call here also avoids device-pixel-ratio scaling.
+  target.viewport.set(0, 0, targetWidth, targetHeight);
+  target.scissor.set(0, 0, targetWidth, targetHeight);
+  target.scissorTest = false;
+  return target;
+}
+
+function collectFrustumFuzzSprite(object) {
+  if (object.isSprite !== true || object.userData?.doomFuzz !== true ||
+      object.material?.visible === false || (object.layers.mask & 1) === 0) return;
+  spriteFuzzVisible.push(object);
+}
+
+function frustumFuzzSprites(pass, targetScene, targetCamera) {
+  spriteFuzzVisible.length = 0;
+  const root = pass?.things ?? targetScene;
+  if (root === null || root === undefined || typeof root.traverseVisible !== 'function') {
+    return spriteFuzzVisible;
+  }
+  // Discover candidates before forcing a full retained-scene matrix update.
+  // Most levels/frames contain no fuzzy actor, so the ordinary render path
+  // should not pay that extra walk merely to prove the empty case.
+  root.traverseVisible(collectFrustumFuzzSprite);
+  if (spriteFuzzVisible.length === 0) return spriteFuzzVisible;
+
+  targetCamera.updateMatrixWorld();
+  root.updateWorldMatrix?.(true, true);
+  spriteFuzzProjection.multiplyMatrices(
+    targetCamera.projectionMatrix, targetCamera.matrixWorldInverse,
+  );
+  spriteFuzzFrustum.setFromProjectionMatrix(spriteFuzzProjection);
+  let visibleCount = 0;
+  for (let i = 0; i < spriteFuzzVisible.length; i++) {
+    const object = spriteFuzzVisible[i];
+    const intersects = typeof spriteFuzzFrustum.intersectsSprite === 'function'
+      ? spriteFuzzFrustum.intersectsSprite(object)
+      : spriteFuzzFrustum.intersectsObject(object);
+    if (intersects) spriteFuzzVisible[visibleCount++] = object;
+  }
+  spriteFuzzVisible.length = visibleCount;
+  return spriteFuzzVisible;
+}
+
+export function I_GetFuzzCaptureStats() {
+  return { ..._fuzzCaptureStats };
+}
+
+function renderRetainedScene(targetScene, targetCamera, spriteDepthPass) {
+  if (spriteDepthPass !== undefined) {
+    return R_RenderRetainedLevel(renderer, targetScene, targetCamera, spriteDepthPass);
+  }
+  renderer.render(targetScene, targetCamera);
+  return 1;
+}
+
+function renderPaletteIndexPass(
+  targetScene,
+  targetCamera,
+  spriteDepthPass,
+  target,
+) {
+  const previousTarget = renderer.getRenderTarget();
+  renderer.getViewport(spriteFuzzSavedViewport);
+  renderer.getScissor(spriteFuzzSavedScissor);
+  renderer.getClearColor(spriteFuzzSavedClearColor);
+  const previousScissorTest = renderer.getScissorTest();
+  const previousClearAlpha = renderer.getClearAlpha();
+  const previousAutoClear = renderer.autoClear;
+  const previousCapture = paletteIndexCaptureUniform.value;
+  const previousSceneBackground = targetScene.background;
+  try {
+    paletteIndexCaptureUniform.value = true;
+    renderer.autoClear = true;
+    renderer.setClearColor(0x000000, 1);
+    targetScene.background = null;
+    renderer.setRenderTarget(target);
+    const submissions = renderRetainedScene(targetScene, targetCamera, spriteDepthPass);
+    _fuzzCaptureStats.indexPasses++;
+    _fuzzCaptureStats.lastIndexPasses++;
+    return submissions;
+  } finally {
+    paletteIndexCaptureUniform.value = previousCapture;
+    targetScene.background = previousSceneBackground;
+    renderer.autoClear = previousAutoClear;
+    renderer.setRenderTarget(previousTarget);
+    renderer.setViewport(spriteFuzzSavedViewport);
+    renderer.setScissor(spriteFuzzSavedScissor);
+    renderer.setScissorTest(previousScissorTest);
+    renderer.setClearColor(spriteFuzzSavedClearColor, previousClearAlpha);
+  }
+}
+
+function renderBaseIndexPass(
+  targetScene,
+  targetCamera,
+  spriteDepthPass,
+  target,
+  fuzzSprites,
+) {
+  for (const object of fuzzSprites) object.visible = false;
+  try {
+    return renderPaletteIndexPass(targetScene, targetCamera, spriteDepthPass, target);
+  } finally {
+    // traverseVisible admitted only objects whose complete parent chain and
+    // own visibility were true, so their exact prior value is known.
+    for (const object of fuzzSprites) object.visible = true;
+  }
+}
+
+function readPspriteIndexTarget(target, view) {
+  const pixelCount = target.width * target.height;
+  const byteCount = pixelCount * 4;
+  if (spriteFuzzReadback === null || spriteFuzzReadback.length !== byteCount) {
+    spriteFuzzReadback = new Uint8Array(byteCount);
+  }
+  renderer.readRenderTargetPixels(
+    target, 0, 0, target.width, target.height, spriteFuzzReadback,
+  );
+  R_StorePspriteFuzzCapture(
+    spriteFuzzReadback,
+    target.width,
+    target.height,
+    view.viewwindowx,
+    view.viewwindowy,
+    SCREENWIDTH,
+    SCREENHEIGHT,
+  );
+  _fuzzCaptureStats.readbacks++;
+}
+
+// Index capture occurs only when a frustum-intersecting world fuzz sprite or
+// an invisible psprite needs it. When both coexist, a second index pass lets
+// the psprite sample the already-composed spectre pixels in Doom draw order.
+function renderViewWithFuzz(
+  targetScene,
+  targetCamera,
+  spriteDepthPass,
+  view,
+  phase,
+  pspriteCaptureRequested,
+) {
+  const fuzzSprites = frustumFuzzSprites(spriteDepthPass, targetScene, targetCamera);
+  const hasWorldFuzz = fuzzSprites.length !== 0;
+  _fuzzCaptureStats.lastWorldFuzzSprites = fuzzSprites.length;
+  _fuzzCaptureStats.lastPspriteCapture = pspriteCaptureRequested;
+
+  R_SetSpriteFuzzFrame(
+    null, view.scaledviewwidth, view.viewheight, view.viewheight, phase,
+  );
+  if (hasWorldFuzz || pspriteCaptureRequested) {
+    spriteFuzzIndexTarget = ensureSpriteFuzzTarget(
+      spriteFuzzIndexTarget,
+      view.scaledviewwidth,
+      view.viewheight,
+      'doom-fuzz-base-indices',
+    );
+    _fuzzCaptureStats.lastTargetWidth = spriteFuzzIndexTarget.width;
+    _fuzzCaptureStats.lastTargetHeight = spriteFuzzIndexTarget.height;
+    renderBaseIndexPass(
+      targetScene, targetCamera, spriteDepthPass, spriteFuzzIndexTarget, fuzzSprites,
+    );
+  }
+
+  if (hasWorldFuzz) {
+    R_SetSpriteFuzzFrame(
+      spriteFuzzIndexTarget.texture,
+      view.scaledviewwidth,
+      view.viewheight,
+      view.viewheight,
+      phase,
+    );
+  }
+
+  if (pspriteCaptureRequested) {
+    let pspriteTarget = spriteFuzzIndexTarget;
+    if (hasWorldFuzz) {
+      spriteFuzzComposedTarget = ensureSpriteFuzzTarget(
+        spriteFuzzComposedTarget,
+        view.scaledviewwidth,
+        view.viewheight,
+        'doom-fuzz-composed-indices',
+      );
+      renderPaletteIndexPass(
+        targetScene, targetCamera, spriteDepthPass, spriteFuzzComposedTarget,
+      );
+      pspriteTarget = spriteFuzzComposedTarget;
+      _fuzzCaptureStats.lastComposedCapture = true;
+    }
+    // Readback is intentionally deferred until after the visible render below,
+    // allowing its GPU work to overlap the completed index target first.
+    const submissions = renderRetainedScene(targetScene, targetCamera, spriteDepthPass);
+    readPspriteIndexTarget(pspriteTarget, view);
+    return submissions;
+  }
+
+  return renderRetainedScene(targetScene, targetCamera, spriteDepthPass);
+}
+
 // Render the world only into the logical Doom view window. WebGL viewport Y
 // is bottom-origin, while every Canvas overlay coordinate is top-origin.
 // Clearing once with scissoring disabled prevents an old larger view from
 // surviving around a newly-shrunk one.
 export function I_RenderView(targetScene = scene, targetCamera = camera) {
+  const pspriteCaptureRequested = R_TakePspriteFuzzCaptureRequest();
+  R_ClearPspriteFuzzCapture();
+  _fuzzCaptureStats.lastWorldFuzzSprites = 0;
+  _fuzzCaptureStats.lastIndexPasses = 0;
+  _fuzzCaptureStats.lastPspriteCapture = false;
+  _fuzzCaptureStats.lastComposedCapture = false;
+  _fuzzCaptureStats.lastTargetWidth = 0;
+  _fuzzCaptureStats.lastTargetHeight = 0;
   if (renderer === null || targetScene === null || targetCamera === null || overlayCanvas === null) {
     return null;
   }
   const view = R_GetViewSize();
   const layout = R_CalculateCanvasView(overlayCanvas.width, overlayCanvas.height, view);
+  const fuzzPhase = R_BeginFuzzFrame();
   configureViewCamera(targetCamera, view);
 
   I_ClearFrame();
@@ -426,14 +706,16 @@ export function I_RenderView(targetScene = scene, targetCamera = camera) {
   renderer.setScissorTest(true);
   try {
     const spriteDepthPass = targetScene.userData.doomSpriteDepthPass;
-    if (spriteDepthPass !== undefined) {
-      R_RenderRetainedLevel(
-        renderer, targetScene, targetCamera, spriteDepthPass,
-      );
-    } else {
-      renderer.render(targetScene, targetCamera);
-    }
+    renderViewWithFuzz(
+      targetScene,
+      targetCamera,
+      spriteDepthPass,
+      view,
+      fuzzPhase,
+      pspriteCaptureRequested,
+    );
   } finally {
+    spriteFuzzVisible.length = 0;
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, layout.canvasWidth, layout.canvasHeight);
   }

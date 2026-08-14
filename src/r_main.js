@@ -19,8 +19,11 @@ import { R_BuildSky, R_UpdateSky, R_ShutdownSky } from './r_sky.js';
 import { R_VisibleLinedefs } from './r_bsp.js';
 import { R_SetViewLighting } from './r_shader.js';
 import { ML_MAPPED } from './doomdata.js';
+import { powertype_t } from './doomdef.js';
 import { R_GetViewSize } from './r_view.js';
 import { R_CreateSpriteDepthPass, spriteFloorPassUniform } from './r_sprite_depth.js';
+import { R_IsPspriteInvisible } from './r_sprite_logic.js';
+import { R_RequestPspriteFuzzCapture } from './r_fuzz.js';
 
 let _levelRoot = null;
 
@@ -123,7 +126,13 @@ function bamToRad(bam) {
 
 // Update Three.js camera from the player.
 export function R_SetupFrame(player) {
-  if (player === null || player.mo === null) return;
+  if (player === null || player.mo === null) {
+    R_RequestPspriteFuzzCapture(false);
+    return;
+  }
+  R_RequestPspriteFuzzCapture(R_IsPspriteInvisible(
+    player.powers?.[powertype_t.pw_invisibility] ?? 0,
+  ));
   const mo = player.mo;
   R_SetViewLighting(
     player.extralight,

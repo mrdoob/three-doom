@@ -29,6 +29,18 @@ let _colormapTex = null;
 let _playpalRGBA = null;
 let _paletteIndex = 0;
 
+// Shared by every world-sprite material. i_video supplies a background-only
+// render of the current view immediately before submitting MF_SHADOW sprites.
+export const spriteFuzzMapUniform = { value: null };
+export const spriteFuzzReadyUniform = { value: false };
+export const spriteFuzzScreenSizeUniform = { value: new THREE.Vector2(1, 1) };
+export const spriteFuzzViewHeightUniform = { value: 200 };
+export const spriteFuzzPhaseUniform = { value: 0 };
+// Hidden index renders share this exact object across walls, planes, sprites,
+// and sky. When enabled each indexed shader writes its post-COLORMAP palette
+// index into red instead of resolving that index to RGB.
+export const paletteIndexCaptureUniform = { value: false };
+
 // PLAYPAL has 14 palettes (256 RGB each); palette selection changes the
 // shared upload so every indexed world material resolves through the exact
 // damage, pickup, or radiation-suit palette selected by st_stuff.c.
@@ -68,22 +80,24 @@ function _buildColormapTexture(colormaps) {
 
 // One-time init from r_data.js's loaded PLAYPAL / COLORMAP.
 export function R_ShaderInit(playpal_rgba, colormaps) {
-  R_SetPlaypal(playpal_rgba);
   if (_colormapTex === null) _colormapTex = _buildColormapTexture(colormaps);
+  R_SetPlaypal(playpal_rgba);
 }
 
 export function R_SetPlaypal(playpalRGBA) {
   _playpalRGBA = playpalRGBA;
   if (_paletteTex === null) {
     _paletteTex = _buildPaletteTexture(_playpalRGBA);
-    return;
+  } else {
+    _paletteTex.image.data.set(_selectedPalette(_playpalRGBA));
+    _paletteTex.needsUpdate = true;
   }
-  _paletteTex.image.data.set(_selectedPalette(_playpalRGBA));
-  _paletteTex.needsUpdate = true;
 }
 
 export function R_SetPaletteIndex(index) {
-  _paletteIndex = Number.isInteger(index) && index >= 0 && index < 14 ? index : 0;
+  const selected = Number.isInteger(index) && index >= 0 && index < 14 ? index : 0;
+  if (selected === _paletteIndex) return;
+  _paletteIndex = selected;
   if (_paletteTex === null || _playpalRGBA === null) return;
   _paletteTex.image.data.set(_selectedPalette(_playpalRGBA));
   _paletteTex.needsUpdate = true;
@@ -106,6 +120,22 @@ export function R_ShutdownShader() {
   scaledViewWidthUniform.value = REFERENCE_SCREENWIDTH;
   spriteFloorPassUniform.value = R_SPRITE_PASS_FULL;
   spriteFloorViewportUniform.value.set(0, 0, 1, 1);
+  spriteFuzzMapUniform.value = null;
+  spriteFuzzReadyUniform.value = false;
+  spriteFuzzScreenSizeUniform.value.set(1, 1);
+  spriteFuzzViewHeightUniform.value = 200;
+  spriteFuzzPhaseUniform.value = 0;
+  paletteIndexCaptureUniform.value = false;
+}
+
+export function R_SetSpriteFuzzFrame(texture, screenWidth, screenHeight, viewHeight, phase) {
+  spriteFuzzMapUniform.value = texture;
+  spriteFuzzReadyUniform.value = texture !== null && texture !== undefined;
+  spriteFuzzScreenSizeUniform.value.set(
+    Math.max(1, screenWidth), Math.max(1, screenHeight),
+  );
+  spriteFuzzViewHeightUniform.value = Math.max(1, viewHeight | 0);
+  spriteFuzzPhaseUniform.value = phase;
 }
 
 // Build the (R8 index, R8 alpha) data texture from a Uint8Array of palette
@@ -222,6 +252,7 @@ uniform float fixedColormap;     // -1 = use shading, >=0 = force this row (invu
 uniform float scaledViewWidth;   // R_ExecuteSetViewSize's scaledviewwidth
 uniform bool masked;
 uniform bool planeLighting;
+uniform bool paletteIndexCapture;
 
 #ifdef DOOM_PLANE_DEPTH
 ${SUPPORT_PLANE_DEPTH_GLSL}
@@ -271,9 +302,13 @@ void main() {
 
   // Sample the colormap remap: x = palIdx, y = row/(rows-1) for 34 rows.
   float remap = texture2D(colormap, vec2(palIdx, (row + 0.5) / 34.0)).r;
-  // Final RGB from the palette.
-  vec3 rgb = texture2D(palette, vec2(remap, 0.5)).rgb;
-  gl_FragColor = vec4(rgb, 1.0);
+  if (paletteIndexCapture) {
+    gl_FragColor = vec4(remap, 0.0, 0.0, 1.0);
+  } else {
+    // Final RGB from the palette.
+    vec3 rgb = texture2D(palette, vec2(remap, 0.5)).rgb;
+    gl_FragColor = vec4(rgb, 1.0);
+  }
 #ifdef DOOM_PLANE_DEPTH
   gl_FragDepth = doomSupportPlaneDepth(vPlaneHeight);
 #endif
@@ -298,6 +333,7 @@ export function R_MakeDoomMaterial(map, { masked = false, plane = false, side = 
       scaledViewWidth: scaledViewWidthUniform,
       masked:        { value: masked },
       planeLighting: { value: plane },
+      paletteIndexCapture: paletteIndexCaptureUniform,
       doomViewport:  spriteFloorViewportUniform,
     },
     defines: plane ? { DOOM_PLANE_DEPTH: '' } : {},
@@ -357,6 +393,12 @@ uniform float playerTranslation;
 uniform float opacity;
 uniform float alphaCutoff;
 uniform float shadowPaletteIndex;
+uniform sampler2D fuzzMap;
+uniform bool fuzzReady;
+uniform vec2 fuzzScreenSize;
+uniform float fuzzViewHeight;
+uniform float fuzzPhase;
+uniform bool paletteIndexCapture;
 uniform int floorPass;
 uniform float floorCutoff;
 uniform float floorHeight;
@@ -365,6 +407,20 @@ ${SUPPORT_PLANE_DEPTH_GLSL}
 
 varying vec2 vUv;
 varying float vViewDepth;
+
+float doomFuzzOffset(float index) {
+  // Negative entries in linuxdoom's exact 50-step fuzzoffset table. All
+  // other entries sample the following framebuffer row.
+  if (
+    index == 1.0 || index == 3.0 || index == 6.0 || index == 9.0 ||
+    index == 13.0 || index == 17.0 || index == 18.0 || index == 19.0 ||
+    index == 20.0 || index == 22.0 || index == 23.0 || index == 28.0 ||
+    index == 30.0 || index == 33.0 || index == 34.0 || index == 37.0 ||
+    index == 38.0 || index == 39.0 || index == 40.0 || index == 45.0 ||
+    index == 48.0
+  ) return -1.0;
+  return 1.0;
+}
 
 void main() {
   // Split the source patch at its physical support plane. The ordinary pass
@@ -384,8 +440,49 @@ void main() {
     : gl_FragCoord.z;
 
   if (shadow) {
-    vec3 shadowRgb = texture2D(palette, vec2(shadowPaletteIndex, 0.5)).rgb;
-    gl_FragColor = vec4(shadowRgb, alpha);
+    if (fuzzReady) {
+      vec2 logicalScale = vec2(
+        doomViewport.z / scaledViewWidth,
+        doomViewport.w / fuzzViewHeight
+      );
+      vec2 localPixel = floor((gl_FragCoord.xy - doomViewport.xy) / logicalScale);
+      // Vanilla protects the first/last view rows before reading a neighbour.
+      if (localPixel.y < 1.0 || localPixel.y >= fuzzViewHeight - 1.0) discard;
+      float topOriginY = fuzzViewHeight - 1.0 - localPixel.y;
+      float sequence = mod(
+        fuzzPhase + localPixel.x * fuzzViewHeight + topOriginY,
+        50.0
+      );
+      float direction = doomFuzzOffset(sequence);
+      // The hidden target is exactly one texel per logical Doom view pixel.
+      // +SCREENWIDTH is one row down in the top-origin framebuffer, hence
+      // subtracting direction in this bottom-origin texture coordinate.
+      vec2 samplePixel = clamp(
+        localPixel + vec2(0.5, 0.5 - direction),
+        vec2(0.5),
+        fuzzScreenSize - vec2(0.5)
+      );
+      float neighbourIndex = texture2D(fuzzMap, samplePixel / fuzzScreenSize).r;
+      float mappedIndex = texture2D(
+        colormap, vec2(neighbourIndex, (6.0 + 0.5) / 34.0)
+      ).r;
+      if (paletteIndexCapture) {
+        gl_FragColor = vec4(mappedIndex, 0.0, 0.0, 1.0);
+      } else {
+        vec3 fuzzRgb = texture2D(palette, vec2(mappedIndex, 0.5)).rgb;
+        gl_FragColor = vec4(fuzzRgb, 1.0);
+      }
+      return;
+    }
+    // Direct material diagnostics do not have i_video's background prepass.
+    // Retain a defined opaque fallback; production MF_SHADOW objects always
+    // take the framebuffer-sampling branch above.
+    if (paletteIndexCapture) {
+      gl_FragColor = vec4(shadowPaletteIndex, 0.0, 0.0, 1.0);
+    } else {
+      vec3 shadowRgb = texture2D(palette, vec2(shadowPaletteIndex, 0.5)).rgb;
+      gl_FragColor = vec4(shadowRgb, 1.0);
+    }
     return;
   }
 
@@ -416,8 +513,12 @@ void main() {
   }
   float palIdx = sourceIndex / 255.0;
   float remap = texture2D(colormap, vec2(palIdx, (row + 0.5) / 34.0)).r;
-  vec3 rgb = texture2D(palette, vec2(remap, 0.5)).rgb;
-  gl_FragColor = vec4(rgb, alpha);
+  if (paletteIndexCapture) {
+    gl_FragColor = vec4(remap, 0.0, 0.0, 1.0);
+  } else {
+    vec3 rgb = texture2D(palette, vec2(remap, 0.5)).rgb;
+    gl_FragColor = vec4(rgb, alpha);
+  }
 }
 `;
 
@@ -440,6 +541,12 @@ export function R_MakeDoomSpriteMaterial(map, { alphaCutoff = 0.5, shadowPalette
       opacity:       { value: 1 },
       alphaCutoff:   { value: alphaCutoff },
       shadowPaletteIndex: { value: shadowPaletteIndex / 255 },
+      fuzzMap:       spriteFuzzMapUniform,
+      fuzzReady:     spriteFuzzReadyUniform,
+      fuzzScreenSize: spriteFuzzScreenSizeUniform,
+      fuzzViewHeight: spriteFuzzViewHeightUniform,
+      fuzzPhase:     spriteFuzzPhaseUniform,
+      paletteIndexCapture: paletteIndexCaptureUniform,
       floorPass:     spriteFloorPassUniform,
       floorCutoff:   { value: 0 },
       floorHeight:   { value: 0 },

@@ -21,7 +21,11 @@ import { GameMode_t } from './doomdef.js';
 import {
   R_CheckTextureNumForName, R_GetWallTexture, texturewidthmask,
 } from './r_data.js';
-import { R_GetPaletteTexture, R_GetColormapTexture } from './r_shader.js';
+import {
+  paletteIndexCaptureUniform,
+  R_GetColormapTexture,
+  R_GetPaletteTexture,
+} from './r_shader.js';
 import { camera } from './i_video.js';
 import { R_GetViewSize } from './r_view.js';
 import { R_SkyRowStep, SKY_TEXTUREMID } from './r_sky_logic.js';
@@ -115,6 +119,7 @@ uniform float skyTexHeight;     // sky texture height in pixels (typically 128)
 uniform float skyTextureMid;    // skytexturemid in texture rows (100)
 uniform float skyRowScale;      // (pspriteiscale>>detailshift) / FRACUNIT
 uniform float skyViewHeight;    // current logical viewheight
+uniform bool paletteIndexCapture;
 
 varying vec4 vClipPosition;
 
@@ -159,8 +164,12 @@ void main() {
   // colormaps[0]).
   float palIdx = texture2D(map, vec2(skyU, skyV)).r;
   float remap = texture2D(colormap, vec2(palIdx, 0.5 / 34.0)).r;
-  vec3 rgb = texture2D(palette, vec2(remap, 0.5)).rgb;
-  gl_FragColor = vec4(rgb, 1.0);
+  if (paletteIndexCapture) {
+    gl_FragColor = vec4(remap, 0.0, 0.0, 1.0);
+  } else {
+    vec3 rgb = texture2D(palette, vec2(remap, 0.5)).rgb;
+    gl_FragColor = vec4(rgb, 1.0);
+  }
 }
 `;
 
@@ -200,6 +209,7 @@ export function R_BuildSky() {
       skyTextureMid: { value: skytexturemid / FRACUNIT },
       skyRowScale:  { value: 1.0 },
       skyViewHeight: { value: 200.0 },
+      paletteIndexCapture: paletteIndexCaptureUniform,
     },
     vertexShader:   SKY_VERT,
     fragmentShader: SKY_FRAG,

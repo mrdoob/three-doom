@@ -20,10 +20,14 @@ import {
   PSPRITE_SHADOW_ROW,
   R_IsPspriteInvisible,
   R_PspriteColormapRow,
-  SPRITE_SHADOW_FLICKER,
-  SPRITE_SHADOW_OPACITY,
   SPRITE_SHADOW_PALETTE_INDEX,
 } from './r_sprite_logic.js';
+import {
+  R_GetFuzzPhase,
+  R_GetPspriteFuzzCapture,
+  R_RasterizeFuzzPatch,
+  R_SetFuzzPhase,
+} from './r_fuzz.js';
 import {
   R_DrawPspritePatch,
   R_ProjectPspritePatch,
@@ -37,11 +41,28 @@ const _cache = new Map();
 let _sourceBuilds = 0;
 let _canvasBuilds = 0;
 let _canvasRepaints = 0;
+let _fuzzOutputCanvas = null;
+let _fuzzOutputContext = null;
+let _fuzzOutputImage = null;
+let _fuzzWorkingIndices = null;
+let _fuzzOutputIndices = null;
+let _fuzzOutputAlpha = null;
 export function R_ShutdownPlayerSprites() {
   _cache.clear();
   _sourceBuilds = 0;
   _canvasBuilds = 0;
   _canvasRepaints = 0;
+  if (_fuzzOutputCanvas !== null) {
+    _fuzzOutputCanvas.width = 0;
+    _fuzzOutputCanvas.height = 0;
+  }
+  _fuzzOutputCanvas = null;
+  _fuzzOutputContext = null;
+  _fuzzOutputImage = null;
+  _fuzzWorkingIndices = null;
+  _fuzzOutputIndices = null;
+  _fuzzOutputAlpha = null;
+  R_SetFuzzPhase(0);
 }
 function decodePatch(lumpIdx) {
   let entry = _cache.get(lumpIdx);
@@ -212,23 +233,61 @@ export function R_GetPspriteCacheStats() {
   };
 }
 
+function ensureFuzzCanvases() {
+  if (_fuzzOutputCanvas !== null) return;
+  _fuzzOutputCanvas = document.createElement('canvas');
+  _fuzzOutputCanvas.width = SCREENWIDTH;
+  _fuzzOutputCanvas.height = SCREENHEIGHT;
+  _fuzzOutputContext = _fuzzOutputCanvas.getContext('2d');
+  _fuzzOutputContext.imageSmoothingEnabled = false;
+  _fuzzOutputImage = _fuzzOutputContext.createImageData(SCREENWIDTH, SCREENHEIGHT);
+  const pixels = SCREENWIDTH * SCREENHEIGHT;
+  _fuzzWorkingIndices = new Uint8Array(pixels);
+  _fuzzOutputIndices = new Uint8Array(pixels);
+  _fuzzOutputAlpha = new Uint8Array(pixels);
+}
+
 // Draw the player's psprites onto the overlay canvas. Called from D_Display
 // after the 3D scene is painted. dstX/Y/W/H describe the complete logical
 // 320x200 screen; an optional view applies native reduced-view projection.
-export function R_DrawPlayerSprites(overlayCtx, player, dstX, dstY, dstW, dstH, view = null) {
+export function R_DrawPlayerSprites(
+  overlayCtx,
+  player,
+  dstX,
+  dstY,
+  dstW,
+  dstH,
+  view = null,
+  backgroundIndices = null,
+) {
   if (player === null || player.mo === null) return;
   const sx = dstW / SCREENWIDTH;
   const sy = dstH / SCREENHEIGHT;
   const invisible = R_IsPspriteInvisible(player.powers?.[powertype_t.pw_invisibility] ?? 0);
   const sectorLight = player.mo.subsector?.sector?.lightlevel ?? 255;
-  // Exact fuzzcolfunc would have to sample neighbouring pixels from the final
-  // composed indexed framebuffer. The Canvas overlay cannot access that
-  // structure, so it deliberately matches the world renderer's dark indexed
-  // silhouette plus translucent shimmer approximation instead.
-  const shadowOpacity = invisible
-    ? SPRITE_SHADOW_OPACITY + (Math.random() - 0.5) * 2 * SPRITE_SHADOW_FLICKER
-    : 1;
   const reduced = view !== null && view !== undefined;
+  if (invisible) {
+    ensureFuzzCanvases();
+    const captured = backgroundIndices ?? R_GetPspriteFuzzCapture();
+    _fuzzWorkingIndices.fill(0);
+    if (captured !== null && captured !== undefined &&
+        captured.length >= _fuzzWorkingIndices.length) {
+      _fuzzWorkingIndices.set(captured.subarray(0, _fuzzWorkingIndices.length));
+    }
+    _fuzzOutputIndices.fill(0);
+    _fuzzOutputAlpha.fill(0);
+    _fuzzOutputImage.data.fill(0);
+  }
+  let fuzzPhase = R_GetFuzzPhase();
+  let fuzzPixels = 0;
+  const fuzzClip = reduced
+    ? {
+        left: view.viewwindowx,
+        top: view.viewwindowy,
+        right: view.viewwindowx + view.scaledviewwidth,
+        bottom: view.viewwindowy + view.viewheight,
+      }
+    : { left: 0, top: 0, right: SCREENWIDTH, bottom: SCREENHEIGHT };
   if (reduced) {
     overlayCtx.save();
     overlayCtx.beginPath();
@@ -283,9 +342,28 @@ export function R_DrawPlayerSprites(overlayCtx, player, dstX, dstY, dstW, dstH, 
       } else {
         bounds = R_PspritePatchBounds(psp.sx, psp.sy, t);
       }
-      const previousAlpha = overlayCtx.globalAlpha;
-      if (colormapRow === PSPRITE_SHADOW_ROW) overlayCtx.globalAlpha = shadowOpacity;
-      try {
+      if (colormapRow === PSPRITE_SHADOW_ROW) {
+        const result = R_RasterizeFuzzPatch({
+          background: _fuzzWorkingIndices,
+          output: _fuzzOutputIndices,
+          outputAlpha: _fuzzOutputAlpha,
+          screenWidth: SCREENWIDTH,
+          screenHeight: SCREENHEIGHT,
+          mask: source.alphas,
+          sourceWidth: source.w,
+          sourceHeight: source.h,
+          bounds,
+          flip: sf.flip[0] === 1,
+          clipLeft: fuzzClip.left,
+          clipTop: fuzzClip.top,
+          clipRight: fuzzClip.right,
+          clipBottom: fuzzClip.bottom,
+          phase: fuzzPhase,
+          colormaps,
+        });
+        fuzzPhase = result.phase;
+        fuzzPixels += result.pixels;
+      } else {
         R_DrawPspritePatch(
           overlayCtx,
           t.canvas,
@@ -296,9 +374,32 @@ export function R_DrawPlayerSprites(overlayCtx, player, dstX, dstY, dstW, dstH, 
           sy,
           sf.flip[0] === 1,
         );
-      } finally {
-        overlayCtx.globalAlpha = previousAlpha;
       }
+    }
+    if (fuzzPixels > 0) {
+      const palette = V_GetActivePalette();
+      const rgba = _fuzzOutputImage.data;
+      for (let pixel = 0, offset = 0; pixel < _fuzzOutputIndices.length; pixel++, offset += 4) {
+        if (_fuzzOutputAlpha[pixel] === 0) continue;
+        const colour = _fuzzOutputIndices[pixel] * 4;
+        rgba[offset] = palette[colour];
+        rgba[offset + 1] = palette[colour + 1];
+        rgba[offset + 2] = palette[colour + 2];
+        rgba[offset + 3] = 255;
+      }
+      _fuzzOutputContext.putImageData(_fuzzOutputImage, 0, 0);
+      overlayCtx.drawImage(
+        _fuzzOutputCanvas,
+        0,
+        0,
+        SCREENWIDTH,
+        SCREENHEIGHT,
+        dstX,
+        dstY,
+        dstW,
+        dstH,
+      );
+      R_SetFuzzPhase(fuzzPhase);
     }
   } finally {
     if (reduced) overlayCtx.restore();
