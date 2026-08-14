@@ -145,7 +145,11 @@ Deno.test('ordinary floor archive supplies zero defaults for raw C fields', () =
   }
 });
 
-Deno.test('P_SaveGame catches archive construction failures', () => {
+Deno.test('P_SaveGame catches archive construction failures', async () => {
+  // Supply a valid current-map identity so this reaches the deliberately bad
+  // live player topology instead of failing earlier during fingerprinting.
+  const wad = await Deno.readFile(new URL('../doom1.wad', import.meta.url));
+  W_InitMultipleFiles([{ name: 'doom1.wad', buffer: wad.buffer }]);
   const oldStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   const oldPlayers = doomstat.players.slice();
   const oldActive = doomstat.playeringame.slice();
@@ -215,6 +219,9 @@ Deno.test('P_SaveGame writes full player, world, thinker, and special arrays', a
     assert(written?.key === 'doom:save:2', 'numeric slot produced the wrong storage key');
     const blob = JSON.parse(written.value);
     assert(blob.version === 110, 'version marker missing');
+    assert(blob.mapFingerprint.algorithm === 'sha256' &&
+      /^[0-9a-f]{64}$/.test(blob.mapFingerprint.digest),
+    'map content digest missing');
     assert(blob.players[0].cmd.forwardmove === -7, 'ticcmd field missing');
     assert(blob.players[0].frags[1] === -2, 'frag field missing');
     assert(blob.players[0].damagecount === 9, 'damage flash field missing');

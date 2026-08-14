@@ -9,9 +9,14 @@
 import * as doomstat from './doomstat.js';
 import * as pSetup from './p_setup.js';
 import {
-  MAXPLAYERS, NUMAMMO, NUMCARDS, NUMPOWERS, NUMWEAPONS, VERSION,
+  GameMode_t, MAXPLAYERS, NUMAMMO, NUMCARDS, NUMPOWERS, NUMWEAPONS, VERSION,
 } from './doomdef.js';
 import { mapthing_t } from './doomdata.js';
+import { W_GetNumForName } from './w_wad.js';
+import {
+  MAP_FINGERPRINT_ALGORITHM, MAP_FINGERPRINT_VERSION,
+  P_GetMapFingerprintForLump, P_MapFingerprintsEqual,
+} from './p_saveg_fingerprint.js';
 import {
   P_AddThinker, P_InitThinkers, thinkercap,
 } from './p_tick.js';
@@ -354,11 +359,10 @@ function liveLines() { return pSetup.lines ?? []; }
 function liveSides() { return pSetup.sides ?? []; }
 
 export function P_GetMapFingerprint() {
-  return {
-    sectors: liveSectors().length,
-    lines: liveLines().length,
-    sides: liveSides().length,
-  };
+  const mapName = doomstat.gamemode === GameMode_t.commercial
+    ? `${doomstat.gamemap < 10 ? 'MAP0' : 'MAP'}${doomstat.gamemap}`
+    : `E${doomstat.gameepisode}M${doomstat.gamemap}`;
+  return P_GetMapFingerprintForLump(W_GetNumForName(mapName));
 }
 
 export function P_ArchiveWorld() {
@@ -911,7 +915,27 @@ export function P_UnArchiveSpecials(archived) {
 
 function validateFingerprint(value, path) {
   const fingerprint = objectValue(value, path);
+  // Count-only saves written before fingerprint v1 cannot be migrated safely:
+  // assigning the currently loaded map's digest would recreate the same-count
+  // cross-WAD bug. P_ReadSaveGame rejects them without deleting their slot.
+  const version = integerValue(
+    fingerprint.version,
+    `${path}.version`,
+    MAP_FINGERPRINT_VERSION,
+    MAP_FINGERPRINT_VERSION,
+  );
+  const algorithm = stringValue(fingerprint.algorithm, `${path}.algorithm`, 16);
+  if (algorithm !== MAP_FINGERPRINT_ALGORITHM) {
+    invalid(`${path}.algorithm`, `must be ${MAP_FINGERPRINT_ALGORITHM}`);
+  }
+  const digest = stringValue(fingerprint.digest, `${path}.digest`, 64);
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    invalid(`${path}.digest`, 'must be a lowercase SHA-256 digest');
+  }
   return {
+    version,
+    algorithm,
+    digest,
     sectors: integerValue(fingerprint.sectors, `${path}.sectors`, 0, INT32_MAX),
     lines: integerValue(fingerprint.lines, `${path}.lines`, 0, INT32_MAX),
     sides: integerValue(fingerprint.sides, `${path}.sides`, 0, INT32_MAX),
@@ -1079,10 +1103,6 @@ export function P_LoadGame(slot) {
   return P_ReadSaveGame(slot);
 }
 
-function sameFingerprint(a, b) {
-  return a.sectors === b.sectors && a.lines === b.lines && a.sides === b.sides;
-}
-
 function preflightRestoreRuntime(save) {
   requireFunction(_P_MobjThinker, 'P_MobjThinker');
   requireFunction(_P_RemoveMobj, 'P_RemoveMobj');
@@ -1118,7 +1138,11 @@ export function P_RestoreGame(value) {
   // This is the last precondition checked before the commit begins.  d_main's
   // target-WAD preflight performs the same check before replacing the old map;
   // this live check protects direct callers and wrong-map restores.
-  if (!sameFingerprint(save.mapFingerprint, P_GetMapFingerprint())) return false;
+  try {
+    if (!P_MapFingerprintsEqual(save.mapFingerprint, P_GetMapFingerprint())) return false;
+  } catch (_) {
+    return false;
+  }
   try {
     preflightRestoreRuntime(save);
   } catch (_) {

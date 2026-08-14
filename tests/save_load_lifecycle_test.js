@@ -49,9 +49,8 @@ Deno.test('save preflight fingerprints the target WAD before live-level mutation
   );
   for (const token of [
     'W_CheckNumForName(mapName)',
-    'ML_SECTORS', 'SIZEOF_mapsector_t',
-    'ML_LINEDEFS', 'SIZEOF_maplinedef_t',
-    'ML_SIDEDEFS', 'SIZEOF_mapsidedef_t',
+    'P_GetMapFingerprintForLump(lumpnum)',
+    'P_MapFingerprintsEqual(',
   ]) {
     assert(validate.includes(token), `target-map validation is missing ${token}`);
   }

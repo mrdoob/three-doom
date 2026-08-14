@@ -121,10 +121,18 @@ try {
     const firstRoot = video.scene.getObjectByName('level');
     const second = mutateThenLoad();
 
-    // A structurally valid save that names E1M2 while retaining E1M1's world
-    // fingerprint must fail target-WAD preflight without touching this level.
-    const wrongMap = { ...blob, map: 2 };
+    // A structurally valid same-count save with another map-content identity
+    // must fail target-WAD preflight without touching this level.
+    const replacement = blob.mapFingerprint.digest[0] === '0' ? '1' : '0';
+    const wrongMap = {
+      ...blob,
+      mapFingerprint: {
+        ...blob.mapFingerprint,
+        digest: replacement + blob.mapFingerprint.digest.slice(1),
+      },
+    };
     localStorage.setItem('doom:save:1', JSON.stringify(wrongMap));
+    const wrongMapParsed = saveg.P_ReadSaveGame(1) !== false;
     const rootBeforeRejectedLoad = video.scene.getObjectByName('level');
     const playerBeforeRejectedLoad = doomstat.players[doomstat.consoleplayer];
     const rejectedBefore = {
@@ -153,6 +161,7 @@ try {
       first,
       second,
       rootReplacedOnSecondLoad: video.scene.getObjectByName('level') !== firstRoot,
+      wrongMapParsed,
       rejectedBefore,
       rejectedAfter,
     };
@@ -179,6 +188,9 @@ try {
   }
   if (result.first.rng !== result.second.rng) {
     failures.push(`repeated load RNG drift: ${result.first.rng} != ${result.second.rng}`);
+  }
+  if (result.wrongMapParsed !== true) {
+    failures.push('different map identity did not pass structural save validation');
   }
   if (JSON.stringify(result.first.resources) !== JSON.stringify(result.second.resources)) {
     failures.push(`repeated load resources drifted: ${JSON.stringify(result.first.resources)} != ${JSON.stringify(result.second.resources)}`);

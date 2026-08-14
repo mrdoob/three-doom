@@ -7,6 +7,10 @@ import {
   SAVEGAME_FORMAT,
   SAVEGAME_VERSION,
 } from '../src/p_saveg.js';
+import {
+  MAP_FINGERPRINT_ALGORITHM,
+  MAP_FINGERPRINT_VERSION,
+} from '../src/p_saveg_fingerprint.js';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -94,7 +98,14 @@ function validSave() {
     skill: 2,
     leveltime: 456,
     playeringame: [true, false, false, false],
-    mapFingerprint: { sectors: 1, lines: 1, sides: 1 },
+    mapFingerprint: {
+      version: MAP_FINGERPRINT_VERSION,
+      algorithm: MAP_FINGERPRINT_ALGORITHM,
+      digest: '00'.repeat(32),
+      sectors: 1,
+      lines: 1,
+      sides: 1,
+    },
     players: [playerDto(), null, null, null],
     world: {
       sectors: [{
@@ -131,6 +142,36 @@ Deno.test('save schema normalizes a complete version-110 DTO', () => {
   assert(normalized.world.lines[0].special === 5, 'line state was not preserved');
   assert(normalized.world.sides[0].midtexture === 11, 'side state was not preserved');
   assert(normalized.thinkers[0].spawnpoint.options === 7, 'spawnpoint was not preserved');
+  assert(normalized.mapFingerprint.digest === '00'.repeat(32), 'map digest was not preserved');
+});
+
+Deno.test('save schema rejects unauthenticated legacy count-only fingerprints', () => {
+  const legacy = validSave();
+  delete legacy.mapFingerprint.version;
+  delete legacy.mapFingerprint.algorithm;
+  delete legacy.mapFingerprint.digest;
+  assert(P_ValidateSaveGame(legacy) === false, 'legacy count-only fingerprint was accepted');
+});
+
+Deno.test('reading a legacy count-only browser save leaves its slot untouched', () => {
+  const oldStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const legacy = validSave();
+  delete legacy.mapFingerprint.version;
+  delete legacy.mapFingerprint.algorithm;
+  delete legacy.mapFingerprint.digest;
+  const raw = JSON.stringify(legacy);
+  const entries = new Map([['doom:save:0', raw]]);
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: (key) => entries.get(key) ?? null },
+  });
+  try {
+    assert(P_ReadSaveGame(0) === false, 'legacy browser save was accepted');
+    assert(entries.get('doom:save:0') === raw, 'legacy browser save was removed or rewritten');
+  } finally {
+    if (oldStorage === undefined) delete globalThis.localStorage;
+    else Object.defineProperty(globalThis, 'localStorage', oldStorage);
+  }
 });
 
 Deno.test('save schema requires one player-owned mobj for every active player', () => {

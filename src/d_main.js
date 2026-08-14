@@ -12,7 +12,7 @@ import {
 } from './v_video.js';
 import { V_PaletteCSS } from './v_palette.js';
 import {
-  W_InitMultipleFiles, W_CheckNumForName, W_CacheLumpName, W_LumpLength,
+  W_InitMultipleFiles, W_CheckNumForName, W_CacheLumpName,
 } from './w_wad.js';
 import { M_CheckParm, myargv, myargc } from './m_argv.js';
 import { M_LoadDefaults } from './m_misc.js';
@@ -35,9 +35,8 @@ import { P_SetupLevel, P_SetExternals as P_SetupSetExternals } from './p_setup.j
 import { R_NewMap, R_SetupFrame, R_Shutdown } from './r_main.js';
 import * as _PSaveg from './p_saveg.js';
 import {
-  ML_LINEDEFS, ML_SECTORS, ML_SIDEDEFS,
-  SIZEOF_maplinedef_t, SIZEOF_mapsector_t, SIZEOF_mapsidedef_t,
-} from './doomdata.js';
+  P_GetMapFingerprintForLump, P_MapFingerprintsEqual,
+} from './p_saveg_fingerprint.js';
 import { D_FreeCamera } from './d_freecamera.js';
 import { D_KeyboardInput } from './d_keyboard.js';
 import { players, consoleplayer } from './doomstat.js';
@@ -1097,10 +1096,7 @@ export async function D_DoomMain() {
   const validateSaveMap = (blob) => {
     const fingerprint = blob?.mapFingerprint;
     if (fingerprint === null || fingerprint === undefined ||
-        !Number.isInteger(blob.episode) || !Number.isInteger(blob.map) ||
-        !Number.isInteger(fingerprint.sectors) || fingerprint.sectors < 0 ||
-        !Number.isInteger(fingerprint.lines) || fingerprint.lines < 0 ||
-        !Number.isInteger(fingerprint.sides) || fingerprint.sides < 0) return false;
+        !Number.isInteger(blob.episode) || !Number.isInteger(blob.map)) return false;
     // Reject values G_InitNew would clamp. Otherwise preflight could approve
     // (for example) a PWAD E1M10, mutate the live game, and then set up E1M9.
     if (doomstat.gamemode !== GameMode_t.commercial && blob.map > 9) return false;
@@ -1113,15 +1109,10 @@ export async function D_DoomMain() {
     const lumpnum = W_CheckNumForName(mapName);
     if (lumpnum < 0) return false;
     try {
-      const sectorBytes = W_LumpLength(lumpnum + ML_SECTORS);
-      const lineBytes = W_LumpLength(lumpnum + ML_LINEDEFS);
-      const sideBytes = W_LumpLength(lumpnum + ML_SIDEDEFS);
-      if (sectorBytes % SIZEOF_mapsector_t !== 0 ||
-          lineBytes % SIZEOF_maplinedef_t !== 0 ||
-          sideBytes % SIZEOF_mapsidedef_t !== 0) return false;
-      return fingerprint.sectors === sectorBytes / SIZEOF_mapsector_t &&
-        fingerprint.lines === lineBytes / SIZEOF_maplinedef_t &&
-        fingerprint.sides === sideBytes / SIZEOF_mapsidedef_t;
+      return P_MapFingerprintsEqual(
+        fingerprint,
+        P_GetMapFingerprintForLump(lumpnum),
+      );
     } catch (_) {
       // A truncated or otherwise malformed target map must be rejected before
       // G_InitNew tears down the currently playable world.
