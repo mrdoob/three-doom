@@ -158,8 +158,8 @@ function onRendererClick(e) {
 }
 
 function onDoomQuit() {
-  // Keep the event as a public browser entry point, but route it through the
-  // same cached source-ordered I_Quit operation as the menu.
+  // Keep the event as a public browser entry point for explicit teardown.
+  // The menu's browser-friendly Quit action only opens its farewell tab.
   void I_Quit();
 }
 

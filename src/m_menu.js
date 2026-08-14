@@ -39,7 +39,7 @@ import {
 import { sfx_oof, sfx_pstop, sfx_pistol, sfx_stnmov, sfx_swtchn, sfx_swtchx } from './sounds.js';
 import { HU_ToggleMessages, showMessages } from './hu_stuff.js';
 import { D_AcquirePointerLock } from './d_keyboard.js';
-import { I_Quit } from './i_system.js';
+import { M_SaveDefaults } from './m_misc.js';
 import {
   gammatable, set_usegamma, usegamma,
   V_DecodePatchToCanvas, V_DrawPatchAtCanvas, V_RegisterPNGPatch,
@@ -559,11 +559,12 @@ function M_QuitResponse(key) {
     key,
     _quitLinkState,
     (...args) => globalThis.open?.(...args),
-    I_Quit,
+    M_SaveDefaults,
   );
 }
 function M_QuitDOOM() {
   // m_menu.c:1105 — deterministic by gametic so it's reproducible per session.
+  _quitLinkState.linkOpened = false;
   M_StartMessage(
     M_QuitMessageForTic(gametic) + '\n\n(Press y or click to quit)',
     M_QuitResponse,

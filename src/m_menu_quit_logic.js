@@ -37,12 +37,12 @@ export function M_QuitMessageForTic(gametic) {
   return DOOM_QUIT_MESSAGES[index];
 }
 
-export function M_ConfirmQuit(key, state, openTab, quit) {
+export function M_ConfirmQuit(key, state, openTab, saveDefaults) {
   if (key !== QUIT_CONFIRM_KEY) return false;
 
   // Keep this synchronous: browsers grant popup permission only while the
-  // keyboard/click user activation is still on the stack. A blocked or failed
-  // popup must not prevent Doom's normal shutdown path.
+  // keyboard/click user activation is still on the stack. The browser port
+  // leaves Doom running in the original page after opening the farewell tab.
   if (state.linkOpened !== true) {
     state.linkOpened = true;
     try {
@@ -50,9 +50,9 @@ export function M_ConfirmQuit(key, state, openTab, quit) {
         openTab(QUIT_LINK, '_blank', 'noopener,noreferrer');
       }
     } catch {
-      // Continue quitting even when the browser refuses the new tab.
+      // Dismiss the prompt even when the browser refuses the new tab.
     }
   }
-  quit();
+  saveDefaults();
   return true;
 }

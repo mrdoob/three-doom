@@ -125,7 +125,7 @@ Deno.test('I_Quit saves defaults before late-registered graphics shutdown', asyn
   }
 });
 
-Deno.test('startup registers defaults before loading and menu quit uses I_Quit', async () => {
+Deno.test('startup registers defaults before loading and menu quit leaves Doom running', async () => {
   const main = await Deno.readTextFile(new URL('../src/d_main.js', import.meta.url));
   const boot = main.slice(main.indexOf('export async function D_DoomMain()'));
   const register = boot.indexOf('M_RegisterDoomDefaults()');
@@ -145,9 +145,10 @@ Deno.test('startup registers defaults before loading and menu quit uses I_Quit',
   const quit = menu.slice(menu.indexOf('function M_QuitDOOM()'), menu.indexOf('// ---------- Lifecycle ----------'));
   if (!quitResponse.includes('M_ConfirmQuit(') ||
       !quitResponse.includes('(...args) => globalThis.open?.(...args)') ||
-      !quitResponse.includes('I_Quit') ||
+      !quitResponse.includes('M_SaveDefaults') ||
+      quitResponse.includes('I_Quit') ||
       !quit.includes('M_QuitResponse') ||
       quit.includes('window.location.reload')) {
-    throw new Error('menu quit does not route through the saving I_Quit path');
+    throw new Error('menu quit does not save and open its link while leaving Doom running');
   }
 });

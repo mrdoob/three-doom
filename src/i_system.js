@@ -95,8 +95,8 @@ export function I_Quit() {
   });
   sequence.then(resolveQuit, rejectQuit);
 
-  // Menu callers cannot await process-style quit. Observe the cached promise
-  // here so an aggregated browser cleanup failure is reported, not unhandled.
+  // Event and programmatic callers need not await process-style quit. Observe
+  // the cached promise here so aggregated cleanup failures are not unhandled.
   void _quitPromise.catch((error) => {
     console.error('I_Quit teardown failed:', error);
   });

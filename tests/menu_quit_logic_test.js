@@ -45,53 +45,53 @@ Deno.test('quit messages follow the compiled 20-entry Linux Doom cycle', () => {
   }
 });
 
-Deno.test('quit confirmation opens the requested tab before shutdown', () => {
+Deno.test('quit confirmation opens the requested tab without shutting down Doom', () => {
   const calls = [];
   const state = { linkOpened: false };
   const confirmed = M_ConfirmQuit(
     QUIT_CONFIRM_KEY,
     state,
     (...args) => { calls.push(['open', ...args]); },
-    () => { calls.push(['quit']); },
+    () => { calls.push(['save']); },
   );
   assertEquals(confirmed, true, 'confirmation result');
   assertEquals(calls, [
     ['open', QUIT_LINK, '_blank', 'noopener,noreferrer'],
-    ['quit'],
-  ], 'open and shutdown order');
+    ['save'],
+  ], 'new-tab request and defaults save');
   assertEquals(state, { linkOpened: true }, 'open guard state');
 });
 
-Deno.test('non-Y responses neither open the link nor quit', () => {
+Deno.test('non-Y responses do not open the link', () => {
   const calls = [];
   const confirmed = M_ConfirmQuit(
     0x6e /*n*/,
     { linkOpened: false },
     () => { calls.push('open'); },
-    () => { calls.push('quit'); },
+    () => { calls.push('save'); },
   );
   assertEquals(confirmed, false, 'decline result');
   assertEquals(calls, [], 'decline side effects');
 });
 
-Deno.test('popup failure cannot prevent shutdown', () => {
+Deno.test('popup failure still consumes the confirmation', () => {
   const calls = [];
   const confirmed = M_ConfirmQuit(
     QUIT_CONFIRM_KEY,
     { linkOpened: false },
     () => { calls.push('open'); throw new Error('blocked'); },
-    () => { calls.push('quit'); },
+    () => { calls.push('save'); },
   );
-  assertEquals(confirmed, true, 'blocked-popup confirmation result');
-  assertEquals(calls, ['open', 'quit'], 'blocked-popup shutdown');
+  assertEquals(confirmed, true, 'blocked-popup result');
+  assertEquals(calls, ['open', 'save'], 'blocked-popup attempt');
 });
 
-Deno.test('repeated confirmation opens one tab while retaining idempotent quit calls', () => {
+Deno.test('repeated confirmation callback opens at most one tab', () => {
   const calls = [];
   const state = { linkOpened: false };
   const open = () => { calls.push('open'); };
-  const quit = () => { calls.push('quit'); };
-  M_ConfirmQuit(QUIT_CONFIRM_KEY, state, open, quit);
-  M_ConfirmQuit(QUIT_CONFIRM_KEY, state, open, quit);
-  assertEquals(calls, ['open', 'quit', 'quit'], 'repeated confirmation');
+  const save = () => { calls.push('save'); };
+  M_ConfirmQuit(QUIT_CONFIRM_KEY, state, open, save);
+  M_ConfirmQuit(QUIT_CONFIRM_KEY, state, open, save);
+  assertEquals(calls, ['open', 'save', 'save'], 'repeated confirmation');
 });
