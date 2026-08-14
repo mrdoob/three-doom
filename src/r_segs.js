@@ -14,6 +14,7 @@ import { skyflatnum } from './doomstat.js';
 import { R_GetWallTexture, textures, R_RegisterWallMesh } from './r_data.js';
 import { R_MakeDoomMaterial } from './r_shader.js';
 import { top, middle, bottom, P_IsSwitchTexture } from './p_switch.js';
+import { R_NeedsTerminalDepthOccluder } from './r_wall_occlusion.js';
 
 // Per-sector wall-quad contributions, so R_UpdateSectorWalls can re-write the
 // Y coordinates when a door/lift/floor moves. Each entry knows how to
@@ -36,6 +37,7 @@ const _switchWalls = new Map();
 // Per-line quad slices for special 48. Wall UVs are baked into shared
 // BufferGeometry, so the affected vertices must be rewritten in place.
 const _scrollWalls = new Map();
+const TERMINAL_OCCLUDER_RENDER_ORDER = -3;
 
 export function R_ShutdownWalls() {
   _wallContribs.clear();
@@ -113,6 +115,17 @@ function updateContrib(c) {
   const bc = c.back !== null ? c.back.ceilingheight / 65536 : 0;
   let zBottom, zTop, anchorY;
   switch (c.kind) {
+    case 'terminal-occluder':
+      {
+        const active = R_NeedsTerminalDepthOccluder(c.front, c.back, c.side);
+        zBottom = ff;
+        zTop = active ? fc : ff;
+        if (active !== c.active) {
+          c.bucket.mesh.userData.doomTerminalOccluderCount += active ? 1 : -1;
+          c.active = active;
+        }
+      }
+      break;
     case 'one-sided':
       zBottom = ff; zTop = fc;
       anchorY = c.dontPegBottom ? (ff + c.texH) : fc;
@@ -209,6 +222,50 @@ export function R_BuildWalls(scene) {
   let switchSeq = 0; // unique-bucket counter for private switch-wall meshes
   const opaqueBuckets = new Map(); // bucket key -> bucket
   const maskedBuckets = new Map(); // bucket key -> bucket
+  // Vanilla clips one-sided and closed two-sided lines as solid horizontal
+  // spans even when the wall tier that would color them has texture "-".
+  // Retained rendering still needs that terminal depth, otherwise already-
+  // submitted geometry from beyond the line can show through the HOM region.
+  const terminalBucket = {
+    positions: [], indices: [], candidateCount: 0, activeCount: 0, mesh: undefined,
+  };
+
+  function pushTerminalOccluder(li, front, back, side, frontFacing) {
+    const active = R_NeedsTerminalDepthOccluder(front, back, side);
+    const ff = front.floorheight / 65536;
+    const fc = front.ceilingheight / 65536;
+    const zTop = active ? fc : ff;
+    const x1 = li.v1.x / 65536;
+    const y1 = li.v1.y / 65536;
+    const x2 = li.v2.x / 65536;
+    const y2 = li.v2.y / 65536;
+    const baseIdx = terminalBucket.positions.length / 3;
+    terminalBucket.positions.push(
+      x1, ff,   -y1,
+      x2, ff,   -y2,
+      x2, zTop, -y2,
+      x1, zTop, -y1,
+    );
+    if (frontFacing === true) {
+      terminalBucket.indices.push(
+        baseIdx, baseIdx + 1, baseIdx + 2,
+        baseIdx, baseIdx + 2, baseIdx + 3,
+      );
+    } else {
+      terminalBucket.indices.push(
+        baseIdx, baseIdx + 2, baseIdx + 1,
+        baseIdx, baseIdx + 3, baseIdx + 2,
+      );
+    }
+    const c = {
+      bucket: terminalBucket, baseIdx, front, back, side,
+      kind: 'terminal-occluder', active, texH: 0,
+    };
+    attachContrib(front, c);
+    if (back !== null && back !== front) attachContrib(back, c);
+    terminalBucket.candidateCount++;
+    if (active) terminalBucket.activeCount++;
+  }
 
   // frontFacing = true → triangle winding makes the normal point toward the
   // Doom-front side of the linedef (FrontSide material then renders the wall
@@ -314,6 +371,9 @@ export function R_BuildWalls(scene) {
         kind: 'one-sided', rowoffset: sd0.rowoffset/65536, texH,
         dontPegTop, dontPegBottom, lightSector: front, contrast,
       });
+      if (sd0.midtexture <= 0) {
+        pushTerminalOccluder(li, front, null, sd0, true);
+      }
     } else {
       const back = li.backsector;
       const backFloor   = back.floorheight   / 65536;
@@ -325,6 +385,13 @@ export function R_BuildWalls(scene) {
       // texture entirely, so the sky bleeds across the height difference
       // instead of revealing a wall standing against the sky.
       const skyToSky = front.ceilingpic === skyflatnum && back.ceilingpic === skyflatnum;
+
+      // Allocate collapsed candidates for missing tiers even while this portal
+      // is open. A door/lift can later make it terminal; R_UpdateSectorWalls
+      // expands only the side whose native closed-span texture is absent.
+      if (sd0.toptexture <= 0 || sd0.bottomtexture <= 0) {
+        pushTerminalOccluder(li, front, back, sd0, true);
+      }
 
       // Front upper. r_segs.c:570 draws toptexture when worldhigh < worldtop.
       if (sd0.toptexture > 0 && skyToSky !== true) {
@@ -381,6 +448,9 @@ export function R_BuildWalls(scene) {
       // Back side (mirror).
       const sd1 = sides[li.sidenum[1]];
       if (sd1 !== undefined) {
+        if (sd1.toptexture <= 0 || sd1.bottomtexture <= 0) {
+          pushTerminalOccluder(li, back, front, sd1, false);
+        }
         if (sd1.toptexture > 0 && skyToSky !== true) {
           const texH = _texH(sd1.toptexture);
           const anchor = dontPegTop ? backCeiling : (frontCeiling + texH);
@@ -464,6 +534,29 @@ export function R_BuildWalls(scene) {
   }
   buildBucketMeshes(opaqueBuckets, false);
   buildBucketMeshes(maskedBuckets, true);
+
+  if (terminalBucket.candidateCount > 0) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(terminalBucket.positions, 3));
+    g.setIndex(terminalBucket.indices);
+    const mat = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      depthTest: true,
+      depthWrite: true,
+      side: THREE.FrontSide,
+    });
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.name = 'terminal-occluders';
+    mesh.frustumCulled = false;
+    // Depth must exist before any retained geometry beyond the terminal span
+    // is submitted. Later, genuinely nearer color still passes normally.
+    mesh.renderOrder = TERMINAL_OCCLUDER_RENDER_ORDER;
+    mesh.userData.doomTerminalOccluder = true;
+    mesh.userData.doomTerminalOccluderCandidates = terminalBucket.candidateCount;
+    mesh.userData.doomTerminalOccluderCount = terminalBucket.activeCount;
+    terminalBucket.mesh = mesh;
+    group.add(mesh);
+  }
 
   scene.add(group);
   return group;
