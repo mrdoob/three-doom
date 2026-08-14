@@ -1,5 +1,5 @@
 import { GameMode_t } from '../src/doomdef.js';
-import { D_StartupArgumentPlan } from '../src/d_startup_logic.js';
+import { D_DemoArgumentPlan, D_StartupArgumentPlan } from '../src/d_startup_logic.js';
 
 function assertEquals(actual, expected, message) {
   const a = JSON.stringify(actual);
@@ -109,4 +109,28 @@ Deno.test('named browser maps remain compatible and valid -warp takes precedence
     { skill: 2, episode: 1, map: 8, autostart: true },
     'malformed warp fallback',
   );
+});
+
+Deno.test('demo planning appends .lmp and gives playdemo precedence', () => {
+  assertEquals(
+    D_DemoArgumentPlan(['', '-timedemo', 'bench', '-playdemo', 'demos/run?rev=2']),
+    {
+      kind: 'playdemo',
+      argument: 'demos/run?rev=2',
+      path: 'demos/run.lmp?rev=2',
+      lump: 'RUN',
+    },
+    'playdemo precedence',
+  );
+  assertEquals(
+    D_DemoArgumentPlan(['', '-timedemo', String.raw`C:\DEMOS\DEMO1.LMP`]),
+    {
+      kind: 'timedemo',
+      argument: String.raw`C:\DEMOS\DEMO1.LMP`,
+      path: String.raw`C:\DEMOS\DEMO1.LMP`,
+      lump: 'DEMO1',
+    },
+    'explicit extension',
+  );
+  assertEquals(D_DemoArgumentPlan(['', '-playdemo']), null, 'missing demo name');
 });

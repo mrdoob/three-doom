@@ -63,7 +63,7 @@ import { R_CalculateCanvasView, R_GetViewSize } from './r_view.js';
 import { R_DrawViewBorder } from './r_border.js';
 import { P_FindMapThingType } from './p_mapthing_logic.js';
 import { D_FileArgumentPlan } from './d_file_logic.js';
-import { D_StartupArgumentPlan } from './d_startup_logic.js';
+import { D_DemoArgumentPlan, D_StartupArgumentPlan } from './d_startup_logic.js';
 import {
   G_EnsurePlayerTopology, G_CollectActivePlayers, G_StagePlayerTiccmds,
   G_ReadDemoTiccmds,
@@ -715,15 +715,17 @@ export async function D_DoomMain() {
   set_startepisode(startupPlan.episode);
   set_startmap(startupPlan.map);
   set_autostart(startupPlan.autostart);
+  const demoPlan = D_DemoArgumentPlan(myargv);
   // d_main.c appends every argument after the first -file until the next
   // option. Fetch them concurrently, but retain argument order so later PWADs
   // win W_CheckNumForName's backwards override search.
   const filePlan = D_FileArgumentPlan(myargv);
   // W_AddFile treats command-line additions as optional: an unavailable PWAD
   // is reported and skipped without preventing later overlays from loading.
-  const overlayResults = await Promise.all(
-    filePlan.paths.map((path) => fetchWad(path, false)),
-  );
+  const [overlayResults, demoFile] = await Promise.all([
+    Promise.all(filePlan.paths.map((path) => fetchWad(path, false))),
+    demoPlan === null ? null : fetchWad(demoPlan.path, false),
+  ]);
   const overlays = overlayResults.filter((wad) => wad !== null);
   // The 1993 executable rejected every -file with the shareware IWAD. The
   // browser deliberately permits overlays: they cannot manufacture absent
@@ -732,7 +734,14 @@ export async function D_DoomMain() {
   W_InitMultipleFiles([
     { name: iwad.name, buffer: iwad.buffer },
     ...overlays.map((wad) => ({ name: wad.name, buffer: wad.buffer })),
+    ...(demoFile === null ? [] : [{ name: demoFile.name, buffer: demoFile.buffer }]),
   ]);
+  // An unavailable external file may still name DEMO1..3 in the IWAD. If
+  // neither source exists, fail here with a useful startup diagnostic instead
+  // of leaving a queued demo on an empty demo screen.
+  if (demoPlan !== null && W_CheckNumForName(demoPlan.lump) < 0) {
+    I_Error(`Demo ${demoPlan.argument} not found`);
+  }
 
   // m_misc.c:M_LoadDefaults resets and loads every registered binding before
   // the settings are consumed by graphics or input initialization.
@@ -1025,7 +1034,6 @@ export async function D_DoomMain() {
   _GGame.G_SetExternals({ P_SpawnPlayer, G_CheckSpot });
   // skyflatnum = R_FlatNumForName("F_SKY1") — used by r_plane.js to skip
   // drawing ceiling/floor flats that should show sky.
-  const { W_CheckNumForName } = await import('./w_wad.js');
   if (W_CheckNumForName('F_SKY1') !== -1) {
     (await import('./doomstat.js')).set_skyflatnum(R_FlatNumForName('F_SKY1'));
   }
@@ -1144,9 +1152,15 @@ export async function D_DoomMain() {
     });
   }
 
-  // Native -skill / -episode / -warp and the browser -map alias autostart a
-  // real new game after the synchronous level-load hook has been installed.
-  if (startupPlan.autostart) {
+  // Command-line demo playback owns startup ahead of a saved/autostarted game.
+  // G_PlayDemo/G_TimeDemo queue ga_playdemo for the first loop tic, matching
+  // the regular attract-loop path without bypassing demo header setup.
+  if (demoPlan !== null) {
+    if (demoPlan.kind === 'playdemo') _GGame.G_PlayDemo(demoPlan.lump);
+    else _GGame.G_TimeDemo(demoPlan.lump);
+  } else if (startupPlan.autostart) {
+    // Native -skill / -episode / -warp and the browser -map alias autostart a
+    // real new game after the synchronous level-load hook has been installed.
     // d_main.c:1163-1164 — command-line autostart is a real new game, not a
     // raw map setup. G_InitNew applies -fast/-respawn state and marks the
     // session as a user game; G_DoLoadLevel then enters through the same

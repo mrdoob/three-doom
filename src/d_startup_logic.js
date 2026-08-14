@@ -116,3 +116,41 @@ export function D_StartupArgumentPlan(argv, gamemode) {
 
   return Object.freeze({ skill, episode, map, autostart });
 }
+
+function appendLmpExtension(value) {
+  const suffixIndex = value.search(/[?#]/);
+  const assetPath = suffixIndex < 0 ? value : value.slice(0, suffixIndex);
+  const suffix = suffixIndex < 0 ? '' : value.slice(suffixIndex);
+  return /\.lmp$/i.test(assetPath) ? value : `${assetPath}.lmp${suffix}`;
+}
+
+function lumpNameFromAsset(value) {
+  const suffixIndex = value.search(/[?#]/);
+  const assetPath = suffixIndex < 0 ? value : value.slice(0, suffixIndex);
+  const slash = Math.max(assetPath.lastIndexOf('/'), assetPath.lastIndexOf('\\'));
+  const basename = assetPath.slice(slash + 1);
+  const dot = basename.indexOf('.');
+  const lump = (dot < 0 ? basename : basename.slice(0, dot)).toUpperCase().slice(0, 8);
+  return lump.length === 0 ? null : lump;
+}
+
+function demoOption(argv, option, kind) {
+  const index = optionIndex(argv, option);
+  if (index < 0 || index + 1 >= argv.length) return null;
+  const argument = argv[index + 1];
+  if (typeof argument !== 'string' || argument.length === 0 || argument.startsWith('-')) {
+    return null;
+  }
+  const path = appendLmpExtension(argument);
+  const lump = lumpNameFromAsset(path);
+  if (lump === null) return null;
+  return Object.freeze({ kind, argument, path, lump });
+}
+
+// Linux Doom gives -playdemo precedence over -timedemo when planning the
+// optional external .lmp. Make that precedence explicit because the browser
+// loop does return to its caller after scheduling a frame.
+export function D_DemoArgumentPlan(argv) {
+  return demoOption(argv, '-playdemo', 'playdemo') ??
+    demoOption(argv, '-timedemo', 'timedemo');
+}
