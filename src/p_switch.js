@@ -5,6 +5,8 @@
 
 import { sides } from './p_setup.js';
 import { R_TextureNumForName, R_CheckTextureNumForName } from './r_data.js';
+import { I_Error } from './i_system.js';
+import { P_StartButtonInList } from './p_switch_logic.js';
 
 // Doom's alphSwitchList pairs (name1 = off, name2 = on, episode).
 // Mirrors p_switch.c: episode 1 = Doom shareware, episode 2 = Doom registered+,
@@ -87,15 +89,7 @@ export function P_InitSwitchList(episode) {
 }
 
 export function P_StartButton(line, w, texture, time) {
-  for (const b of buttonlist) {
-    if (b.btimer !== 0 && b.line === line) return;
-  }
-  for (const b of buttonlist) {
-    if (b.btimer === 0) {
-      b.line = line; b.where = w; b.btexture = texture; b.btimer = time;
-      return;
-    }
-  }
+  P_StartButtonInList(buttonlist, line, w, texture, time, I_Error);
 }
 
 // Per-tic countdown — call from P_UpdateSpecials.
