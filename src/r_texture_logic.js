@@ -14,3 +14,10 @@ export function R_WallTextureUV(textureOffset, length, columnPeriod) {
     u1: (textureOffset + length) / columnPeriod,
   };
 }
+
+// Wall geometry remains normalized to the texture period it was built with.
+// When a switch or animation selects a frame with another mask period, scale
+// the sampler coordinate back to the active frame's column addressing.
+export function R_WallTextureUScale(baseColumnPeriod, frameColumnPeriod) {
+  return baseColumnPeriod / frameColumnPeriod;
+}

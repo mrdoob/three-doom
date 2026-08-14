@@ -192,6 +192,7 @@ export function R_SetViewLighting(
 // wall contrast survives until extralight is added and the result is clamped.
 
 const VERT_SHADER = /* glsl */ `
+uniform float wallTextureUScale;
 varying vec2 vUv;
 varying vec3 vColor;
 varying float vViewDepth;
@@ -200,7 +201,7 @@ varying float vPlaneHeight;
 #endif
 
 void main() {
-  vUv = uv;
+  vUv = vec2(uv.x * wallTextureUScale, uv.y);
   vColor = color;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vViewDepth = -mv.z;
@@ -368,6 +369,7 @@ export function R_MakeDoomMaterial(map, { masked = false, plane = false, side = 
   const material = new THREE.ShaderMaterial({
     uniforms: {
       map:           { value: map },
+      wallTextureUScale: { value: 1 },
       palette:       { value: _paletteTex },
       colormap:      { value: _colormapTex },
       extralight:    extralightUniform,

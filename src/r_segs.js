@@ -11,7 +11,9 @@ import * as THREE from 'three';
 import { lines, sides, numlines } from './p_setup.js';
 import { ML_TWOSIDED, ML_DONTPEGTOP, ML_DONTPEGBOTTOM } from './doomdata.js';
 import { skyflatnum } from './doomstat.js';
-import { R_GetWallTexture, textures, R_RegisterWallMesh } from './r_data.js';
+import {
+  R_GetWallTexture, textures, R_RegisterWallMesh, R_SetWallMeshTexture,
+} from './r_data.js';
 import { R_MakeDoomMaterial } from './r_shader.js';
 import { top, middle, bottom, P_IsSwitchTexture } from './p_switch.js';
 import { R_NeedsTerminalDepthOccluder } from './r_wall_occlusion.js';
@@ -53,9 +55,7 @@ export function R_SetSwitchTexture(line, slot, texnum) {
   if (rec === undefined) return;
   const b = rec[slot];
   if (b === undefined || b.mesh === undefined) return;
-  const tex = R_GetWallTexture(texnum);
-  if (tex === null) return;
-  b.mesh.material.uniforms.map.value = tex;
+  if (!R_SetWallMeshTexture(b.mesh, texnum)) return;
   b.texnum = texnum;
 }
 

@@ -11,7 +11,7 @@ import { R_MakeIndexedTexture, R_ShaderInit } from './r_shader.js';
 import { sectors, sides } from './p_setup.js';
 import { gamemode, gameepisode, gamemap } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
-import { R_TextureColumnPeriod } from './r_texture_logic.js';
+import { R_TextureColumnPeriod, R_WallTextureUScale } from './r_texture_logic.js';
 
 // ---------- Lump ranges ----------
 export let firstflat = 0, lastflat = 0, numflats = 0;
@@ -380,9 +380,32 @@ const _meshesByTexnum   = new Map(); // texnum -> Set<mesh>
 const _meshesByFlatnum  = new Map(); // flatnum -> Set<mesh>
 
 export function R_RegisterWallMesh(texnum, mesh) {
+  // The geometry's U coordinates stay normalized to this build-time period.
+  // Runtime texture changes adjust a shader scale instead of rebuilding or
+  // repeatedly rescaling the shared BufferGeometry.
+  mesh.userData.doomWallBaseColumnPeriod = texturewidthmask[texnum] + 1;
+  mesh.material.uniforms.wallTextureUScale.value = 1;
   let s = _meshesByTexnum.get(texnum);
   if (s === undefined) { s = new Set(); _meshesByTexnum.set(texnum, s); }
   s.add(mesh);
+}
+
+function applyWallMeshTexture(mesh, texnum, texture) {
+  mesh.material.uniforms.map.value = texture;
+  const basePeriod = mesh.userData.doomWallBaseColumnPeriod;
+  const framePeriod = texturewidthmask[texnum] + 1;
+  mesh.material.uniforms.wallTextureUScale.value =
+    R_WallTextureUScale(basePeriod, framePeriod);
+}
+
+// Switches and animations both replace the sampled wall texture without
+// rebuilding its retained geometry. Keep the horizontal mask period in sync
+// with the selected frame at the same time.
+export function R_SetWallMeshTexture(mesh, texnum) {
+  const texture = R_GetWallTexture(texnum);
+  if (texture === null) return false;
+  applyWallMeshTexture(mesh, texnum, texture);
+  return true;
 }
 
 // Drop every registered mesh. Called by R_NewMap before the old level group
@@ -506,7 +529,10 @@ export function R_AnimateTextures(leveltime) {
       if (tex === null) continue;
       // The wall/flat ShaderMaterial (R_MakeDoomMaterial) samples the `map`
       // uniform, NOT material.map — set the uniform so the swap actually renders.
-      for (const m of set) m.material.uniforms.map.value = tex;
+      for (const m of set) {
+        if (a.isTexture) applyWallMeshTexture(m, pic, tex);
+        else m.material.uniforms.map.value = tex;
+      }
     }
   }
 }

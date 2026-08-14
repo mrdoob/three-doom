@@ -1,6 +1,7 @@
 import {
   R_TextureColumnPeriod,
   R_WallTextureUV,
+  R_WallTextureUScale,
 } from '../src/r_texture_logic.js';
 
 function assertEquals(actual, expected, message) {
@@ -34,5 +35,19 @@ Deno.test('wall build and scrolling UVs use the masked column period', () => {
     R_WallTextureUV(-3, 20, 16),
     { u0: -0.1875, u1: 1.0625 },
     'negative scrolling offset',
+  );
+});
+
+Deno.test('runtime wall frames scale build-time UVs to their own mask period', () => {
+  assertEquals(R_WallTextureUScale(16, 16), 1, 'unchanged frame period');
+  assertEquals(R_WallTextureUScale(16, 64), 0.25, 'wider animation frame');
+  assertEquals(R_WallTextureUScale(64, 16), 4, 'narrower switch frame');
+
+  const baseUv = R_WallTextureUV(5, 31, 16);
+  const scale = R_WallTextureUScale(16, 64);
+  assertEquals(
+    { u0: baseUv.u0 * scale, u1: baseUv.u1 * scale },
+    R_WallTextureUV(5, 31, 64),
+    'scaled scrolling UVs address the active frame period',
   );
 });
