@@ -26,36 +26,18 @@ import {
 } from './r_sprite_logic.js';
 import { R_SpriteBillboardCenterY } from './r_sprite_projection.js';
 import { R_MarkWorldSprite } from './r_sprite_depth.js';
+import {
+  R_CreateSpriteDefinitionScratch,
+  R_InstallSpriteLump,
+  R_ResetSpriteDefinitionScratch,
+  R_ValidateSpriteDefinition,
+} from './r_sprite_definition_logic.js';
 
 // ---------- Sprite definition tables ----------
 export let numsprites = 0;
 export let sprites    = null;
 
-const sprtemp = new Array(29);
-for (let i = 0; i < 29; i++) sprtemp[i] = new spriteframe_t();
-let maxframe = -1;
-
-function R_InstallSpriteLump(lump, frame, rotation, flipped) {
-  // C declares `rotation` unsigned; in JS a malformed lump name (e.g. '/' at
-  // pos 5) produces a negative value that would slip past `> 8` and then write
-  // sprtemp[].lump[-1] silently. Guard the negative case explicitly.
-  if (frame >= 29 || rotation < 0 || rotation > 8) {
-    I_Error(`R_InstallSpriteLump: Bad frame characters in lump ${lump}`);
-  }
-  if (frame > maxframe) maxframe = frame;
-  if (rotation === 0) {
-    for (let r = 0; r < 8; r++) {
-      sprtemp[frame].lump[r] = lump - firstspritelump;
-      sprtemp[frame].flip[r] = flipped ? 1 : 0;
-    }
-    sprtemp[frame].rotate = false;
-    return;
-  }
-  sprtemp[frame].rotate = true;
-  rotation--;
-  sprtemp[frame].lump[rotation] = lump - firstspritelump;
-  sprtemp[frame].flip[rotation] = flipped ? 1 : 0;
-}
+const spriteDefinitionScratch = R_CreateSpriteDefinitionScratch();
 
 // R_InitSpriteDefs — walks lump directory for sprite-named entries.
 export function R_InitSpriteDefs(namelist) {
@@ -65,11 +47,7 @@ export function R_InitSpriteDefs(namelist) {
   const start = firstspritelump - 1;
   const end   = lastspritelump  + 1;
   for (let i = 0; i < numsprites; i++) {
-    for (let k = 0; k < 29; k++) {
-      sprtemp[k].rotate = -1; // sentinel
-      for (let r = 0; r < 8; r++) { sprtemp[k].lump[r] = -1; sprtemp[k].flip[r] = 0; }
-    }
-    maxframe = -1;
+    R_ResetSpriteDefinitionScratch(spriteDefinitionScratch);
     for (let l = start + 1; l < end; l++) {
       const lname = lumpinfo[l].name;
       if (lname.slice(0, 4) === namelist[i]) {
@@ -79,28 +57,49 @@ export function R_InitSpriteDefs(namelist) {
         // In a modified game, resolve each discovered name through the full
         // directory so a later standalone `-file TROOA1.lmp` can replace it.
         const patched = modifiedgame ? W_GetNumForName(lname) : l;
-        R_InstallSpriteLump(patched, frame, rotation, false);
+        R_InstallSpriteLump(
+          spriteDefinitionScratch,
+          firstspritelump,
+          patched,
+          frame,
+          rotation,
+          false,
+          namelist[i],
+          I_Error,
+        );
         if (lname.length > 6 && lname.charCodeAt(6) !== 0) {
           const frame2    = lname.charCodeAt(6) - 65;
           const rotation2 = lname.charCodeAt(7) - 48;
           // The same patch supplies both encoded frame/rotation aliases. The
-          // Linux source accidentally used the IWAD lump for this second one;
-          // keep both aliases on the resolved replacement.
-          R_InstallSpriteLump(patched, frame2, rotation2, true);
+          // Linux source used the IWAD lump for this second one; the browser
+          // intentionally keeps both aliases on the resolved PWAD replacement
+          // so one combined lump cannot render half old and half new.
+          R_InstallSpriteLump(
+            spriteDefinitionScratch,
+            firstspritelump,
+            patched,
+            frame2,
+            rotation2,
+            true,
+            namelist[i],
+            I_Error,
+          );
         }
       }
     }
-    if (maxframe === -1) {
+    const frameCount = R_ValidateSpriteDefinition(
+      spriteDefinitionScratch, namelist[i], I_Error,
+    );
+    if (frameCount === 0) {
       sprites[i] = new spritedef_t();
       sprites[i].numframes = 0;
       continue;
     }
-    maxframe++;
     const sd = new spritedef_t();
-    sd.numframes = maxframe;
-    sd.spriteframes = new Array(maxframe);
-    for (let f = 0; f < maxframe; f++) {
-      const src = sprtemp[f];
+    sd.numframes = frameCount;
+    sd.spriteframes = new Array(frameCount);
+    for (let f = 0; f < frameCount; f++) {
+      const src = spriteDefinitionScratch.frames[f];
       const dst = new spriteframe_t();
       dst.rotate = src.rotate === true;
       for (let r = 0; r < 8; r++) { dst.lump[r] = src.lump[r]; dst.flip[r] = src.flip[r]; }
