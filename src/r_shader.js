@@ -235,6 +235,48 @@ float doomSupportPlaneDepth(float height) {
 }
 `;
 
+// Colorless horizontal-plane depth used when a physical floor is represented
+// by a non-physical color pass (currently F_SKY1). It must use the same
+// analytical depth as ordinary Doom planes and the sprite-overhang repair;
+// hardware-interpolated triangle depth is not bit-identical enough for the
+// repair pass's EqualDepth ownership test.
+const SUPPORT_PLANE_DEPTH_VERT_SHADER = /* glsl */ `
+varying float vPlaneHeight;
+
+void main() {
+  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+  vPlaneHeight = worldPosition.y;
+  gl_Position = projectionMatrix * viewMatrix * worldPosition;
+}
+`;
+
+const SUPPORT_PLANE_DEPTH_FRAG_SHADER = /* glsl */ `
+${SUPPORT_PLANE_DEPTH_GLSL}
+varying float vPlaneHeight;
+
+void main() {
+  gl_FragColor = vec4(0.0);
+  gl_FragDepth = doomSupportPlaneDepth(vPlaneHeight);
+}
+`;
+
+export function R_MakeSupportPlaneDepthMaterial({ side = THREE.FrontSide } = {}) {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      doomViewport: spriteFloorViewportUniform,
+    },
+    vertexShader: SUPPORT_PLANE_DEPTH_VERT_SHADER,
+    fragmentShader: SUPPORT_PLANE_DEPTH_FRAG_SHADER,
+    colorWrite: false,
+    depthTest: true,
+    depthFunc: THREE.LessEqualDepth,
+    depthWrite: true,
+    side,
+  });
+  material.onBeforeRender = updateSpriteFloorViewport;
+  return material;
+}
+
 // Fragment shader applies vanilla's two distinct integer light-table paths.
 // Walls and masked midtextures select scalelight[light][rw_scale >> 12];
 // planes select zlight[light][distance >> LIGHTZSHIFT].  With the port's

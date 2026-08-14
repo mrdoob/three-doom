@@ -25,6 +25,7 @@ import {
   paletteIndexCaptureUniform,
   R_GetColormapTexture,
   R_GetPaletteTexture,
+  R_MakeSupportPlaneDepthMaterial,
 } from './r_shader.js';
 import { camera } from './i_video.js';
 import { R_GetViewSize } from './r_view.js';
@@ -237,9 +238,13 @@ export function R_BuildSky() {
     depthWrite: true,
     side: THREE.DoubleSide,
   });
-  _skyFloorDepthMat = _skyDepthMat.clone();
-  _skyFloorDepthMat.side = THREE.FrontSide;
-  _skyFloorDepthMat.needsUpdate = true;
+  // Floors participate in the sprite-overhang EqualDepth repair, so their
+  // colorless sky occluder must write the same analytical support-plane depth
+  // as ordinary floor shaders. Ceiling caps and vertical sky seams do not;
+  // keep their hardware depth path above so seams retain their full shape.
+  _skyFloorDepthMat = R_MakeSupportPlaneDepthMaterial({
+    side: THREE.FrontSide,
+  });
   return {
     floor: _skyFloorMat,
     ceiling: _skyMat,
