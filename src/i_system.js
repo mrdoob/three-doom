@@ -2,7 +2,7 @@
 // System-specific interface for the browser.
 
 import { TICRATE } from './doomdef.js';
-import { M_SaveDefaults } from './m_misc.js';
+import { M_SaveDefaults, M_StopDefaultsPersistence } from './m_misc.js';
 import { I_ShutdownMusic, I_ShutdownSound } from './i_sound.js';
 import { I_RunQuitSequence } from './i_shutdown.js';
 
@@ -72,6 +72,14 @@ function I_ShutdownRegisteredGraphics() {
 // a future transport cannot accidentally be shut down out of order.
 function D_QuitNetGame() {}
 
+function I_SaveDefaultsAndStopPersistence() {
+  try {
+    M_SaveDefaults();
+  } finally {
+    M_StopDefaultsPersistence();
+  }
+}
+
 let _quitPromise = null;
 export function I_Quit() {
   if (_quitPromise !== null) return _quitPromise;
@@ -90,7 +98,7 @@ export function I_Quit() {
     D_QuitNetGame,
     I_ShutdownSound,
     I_ShutdownMusic,
-    M_SaveDefaults,
+    M_SaveDefaults: I_SaveDefaultsAndStopPersistence,
     I_ShutdownGraphics: I_ShutdownRegisteredGraphics,
   });
   sequence.then(resolveQuit, rejectQuit);

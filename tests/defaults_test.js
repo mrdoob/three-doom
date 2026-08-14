@@ -1,14 +1,43 @@
 import * as doomstat from '../src/doomstat.js';
 import { I_Quit, I_RegisterQuitGraphics } from '../src/i_system.js';
 import { HU_SetShowMessages, showMessages } from '../src/hu_stuff.js';
+import { myargv, set_myargv } from '../src/m_argv.js';
 import { M_RegisterDoomDefaults } from '../src/m_defaults.js';
-import { M_LoadDefaults, M_SaveDefaults } from '../src/m_misc.js';
+import {
+  M_LoadDefaults, M_SaveDefaults, M_StartDefaultsPersistence,
+  M_StopDefaultsPersistence,
+} from '../src/m_misc.js';
 import { set_usegamma, usegamma } from '../src/v_video.js';
 import { R_GetScreenblocks, R_SetViewSize } from '../src/r_view.js';
 
 function assertEquals(actual, expected, message) {
   if (actual !== expected) {
     throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
+  }
+}
+
+class ListenerTarget {
+  constructor() {
+    this.listeners = new Map();
+  }
+
+  addEventListener(type, listener) {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(listener);
+  }
+
+  removeEventListener(type, listener) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  dispatch(type) {
+    for (const listener of [...(this.listeners.get(type) ?? [])]) {
+      listener({ type });
+    }
+  }
+
+  listenerCount(type) {
+    return this.listeners.get(type)?.size ?? 0;
   }
 }
 
@@ -76,10 +105,138 @@ Deno.test('input, sound, messages, and video round-trip through registered defau
   }
 });
 
+Deno.test('page lifecycle persists isolated config profiles and tolerates blocked storage', () => {
+  const oldStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const oldWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const oldDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const oldArgv = [...myargv];
+  const values = new Map([
+    ['doom:defaults', 'mouse_sensitivity\t\t7'],
+    ['doom:defaults:practice.cfg', 'mouse_sensitivity\t\t9'],
+  ]);
+  const writes = [];
+  let failGet = false;
+  let failSet = false;
+  const fakeWindow = new ListenerTarget();
+  const fakeDocument = new ListenerTarget();
+  fakeDocument.visibilityState = 'visible';
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: fakeWindow,
+  });
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: fakeDocument,
+  });
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key) => {
+        if (failGet) throw new DOMException('blocked', 'SecurityError');
+        return values.has(key) ? values.get(key) : null;
+      },
+      setItem: (key, value) => {
+        if (failSet) throw new DOMException('full', 'QuotaExceededError');
+        writes.push(key);
+        values.set(key, String(value));
+      },
+    },
+  });
+  try {
+    M_RegisterDoomDefaults();
+    set_myargv(['', '-config', 'practice.cfg']);
+    M_LoadDefaults();
+    assertEquals(doomstat.mouseSensitivity, 9, 'named profile load');
+    assertEquals(fakeWindow.listenerCount('pagehide'), 1, 'pagehide listener count');
+    assertEquals(fakeDocument.listenerCount('visibilitychange'), 1, 'visibility listener count');
+
+    M_StartDefaultsPersistence();
+    assertEquals(fakeWindow.listenerCount('pagehide'), 1, 'idempotent pagehide listener');
+    assertEquals(fakeDocument.listenerCount('visibilitychange'), 1, 'idempotent visibility listener');
+
+    doomstat.set_mouseSensitivity(10);
+    fakeDocument.dispatch('visibilitychange');
+    assertEquals(writes.length, 0, 'visible page does not save');
+    fakeDocument.visibilityState = 'hidden';
+    fakeDocument.dispatch('visibilitychange');
+    assertEquals(writes.join(','), 'doom:defaults:practice.cfg', 'hidden profile save key');
+    assertEquals(
+      values.get('doom:defaults:practice.cfg').startsWith('mouse_sensitivity\t\t10\n'),
+      true,
+      'hidden profile value',
+    );
+    assertEquals(values.get('doom:defaults'), 'mouse_sensitivity\t\t7', 'base profile isolation');
+
+    doomstat.set_mouseSensitivity(11);
+    fakeWindow.dispatch('pagehide');
+    assertEquals(
+      values.get('doom:defaults:practice.cfg').startsWith('mouse_sensitivity\t\t11\n'),
+      true,
+      'pagehide profile value',
+    );
+
+    M_StopDefaultsPersistence();
+    assertEquals(fakeWindow.listenerCount('pagehide'), 0, 'removed pagehide listener');
+    assertEquals(fakeDocument.listenerCount('visibilitychange'), 0, 'removed visibility listener');
+    doomstat.set_mouseSensitivity(12);
+    fakeWindow.dispatch('pagehide');
+    assertEquals(
+      values.get('doom:defaults:practice.cfg').startsWith('mouse_sensitivity\t\t11\n'),
+      true,
+      'stopped lifecycle does not save',
+    );
+
+    set_myargv(['']);
+    fakeDocument.visibilityState = 'visible';
+    M_LoadDefaults();
+    assertEquals(doomstat.mouseSensitivity, 7, 'base profile restored');
+
+    failGet = true;
+    M_LoadDefaults();
+    assertEquals(doomstat.mouseSensitivity, 5, 'blocked read falls back to default');
+    failGet = false;
+    failSet = true;
+    doomstat.set_mouseSensitivity(13);
+    fakeWindow.dispatch('pagehide');
+    assertEquals(values.get('doom:defaults'), 'mouse_sensitivity\t\t7', 'blocked write is harmless');
+  } finally {
+    failGet = false;
+    failSet = false;
+    M_StopDefaultsPersistence();
+    set_myargv(oldArgv);
+    doomstat.set_mouseSensitivity(5);
+    doomstat.set_snd_SfxVolume(8);
+    doomstat.set_snd_MusicVolume(8);
+    doomstat.set_numChannels(3);
+    HU_SetShowMessages(1);
+    set_usegamma(0);
+    R_SetViewSize(10);
+    if (oldStorage === undefined) delete globalThis.localStorage;
+    else Object.defineProperty(globalThis, 'localStorage', oldStorage);
+    if (oldWindow === undefined) delete globalThis.window;
+    else Object.defineProperty(globalThis, 'window', oldWindow);
+    if (oldDocument === undefined) delete globalThis.document;
+    else Object.defineProperty(globalThis, 'document', oldDocument);
+  }
+});
+
 Deno.test('I_Quit saves defaults before late-registered graphics shutdown', async () => {
   const oldStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const oldWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const oldDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   const values = new Map();
   const calls = [];
+  const fakeWindow = new ListenerTarget();
+  const fakeDocument = new ListenerTarget();
+  fakeDocument.visibilityState = 'visible';
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: fakeWindow,
+  });
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: fakeDocument,
+  });
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
@@ -92,6 +249,7 @@ Deno.test('I_Quit saves defaults before late-registered graphics shutdown', asyn
   });
   try {
     M_RegisterDoomDefaults();
+    M_LoadDefaults();
     doomstat.set_mouseSensitivity(7);
     doomstat.set_snd_SfxVolume(11);
     doomstat.set_snd_MusicVolume(4);
@@ -103,6 +261,8 @@ Deno.test('I_Quit saves defaults before late-registered graphics shutdown', asyn
     const secondQuit = I_Quit();
     assertEquals(firstQuit === secondQuit, true, 'quit promise identity');
     assertEquals(calls.join(','), 'save', 'defaults before graphics registration');
+    assertEquals(fakeWindow.listenerCount('pagehide'), 0, 'quit removes pagehide listener');
+    assertEquals(fakeDocument.listenerCount('visibilitychange'), 0, 'quit removes visibility listener');
     I_RegisterQuitGraphics(() => { calls.push('graphics'); });
     assertEquals(calls.join(','), 'save,graphics', 'late graphics registration is synchronous');
     await firstQuit;
@@ -122,6 +282,10 @@ Deno.test('I_Quit saves defaults before late-registered graphics shutdown', asyn
     R_SetViewSize(10);
     if (oldStorage === undefined) delete globalThis.localStorage;
     else Object.defineProperty(globalThis, 'localStorage', oldStorage);
+    if (oldWindow === undefined) delete globalThis.window;
+    else Object.defineProperty(globalThis, 'window', oldWindow);
+    if (oldDocument === undefined) delete globalThis.document;
+    else Object.defineProperty(globalThis, 'document', oldDocument);
   }
 });
 

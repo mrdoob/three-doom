@@ -43,7 +43,29 @@ export function M_ReadFile(name, result) {
 // without losing the C "*int_pointer" pattern.
 
 const defaults = [];
-let defaultfile = 'default.cfg';
+const DEFAULT_CONFIG_FILE = 'default.cfg';
+const DEFAULTS_STORAGE_KEY = 'doom:defaults';
+let defaultfile = DEFAULT_CONFIG_FILE;
+
+let _defaultsPersistenceActive = false;
+let _defaultsPersistenceWindow = null;
+let _defaultsPersistenceDocument = null;
+
+function defaultsStorageKey() {
+  if (defaultfile === DEFAULT_CONFIG_FILE) return DEFAULTS_STORAGE_KEY;
+  return `${DEFAULTS_STORAGE_KEY}:${encodeURIComponent(defaultfile)}`;
+}
+
+function saveDefaultsOnPageLifecycle() {
+  if (_defaultsPersistenceActive === false) return;
+  M_SaveDefaults();
+}
+
+function saveDefaultsWhenHidden() {
+  if (_defaultsPersistenceActive === false ||
+      _defaultsPersistenceDocument?.visibilityState !== 'hidden') return;
+  M_SaveDefaults();
+}
 
 export function M_RegisterDefault(name, ref, defaultvalue) {
   defaults.push({ name, ref, defaultvalue });
@@ -60,17 +82,51 @@ export function M_SaveDefaults() {
     }
   }
   try {
-    localStorage.setItem('doom:defaults', lines.join('\n'));
+    localStorage.setItem(defaultsStorageKey(), lines.join('\n'));
   } catch {
     // Persistence is best-effort when storage is unavailable or full.
   }
+}
+
+// Browser navigation does not run Doom's explicit quit path, so save the
+// current settings before a reload/tab close and when a mobile browser hides
+// the page. Ownership is explicit so repeated startup is idempotent and a
+// terminal I_Quit can remove the listeners synchronously.
+export function M_StartDefaultsPersistence() {
+  const browserWindow = typeof window === 'undefined' ? null : window;
+  const browserDocument = typeof document === 'undefined' ? null : document;
+  if (_defaultsPersistenceActive === true &&
+      _defaultsPersistenceWindow === browserWindow &&
+      _defaultsPersistenceDocument === browserDocument) return;
+
+  M_StopDefaultsPersistence();
+  _defaultsPersistenceWindow = browserWindow;
+  _defaultsPersistenceDocument = browserDocument;
+  _defaultsPersistenceActive = browserWindow !== null || browserDocument !== null;
+  browserWindow?.addEventListener?.('pagehide', saveDefaultsOnPageLifecycle);
+  browserDocument?.addEventListener?.('visibilitychange', saveDefaultsWhenHidden);
+}
+
+export function M_StopDefaultsPersistence() {
+  // Relinquish ownership before removal so a hostile/custom EventTarget cannot
+  // make a re-entrant callback write after terminal shutdown has begun.
+  const browserWindow = _defaultsPersistenceWindow;
+  const browserDocument = _defaultsPersistenceDocument;
+  _defaultsPersistenceActive = false;
+  _defaultsPersistenceWindow = null;
+  _defaultsPersistenceDocument = null;
+  browserWindow?.removeEventListener?.('pagehide', saveDefaultsOnPageLifecycle);
+  browserDocument?.removeEventListener?.('visibilitychange', saveDefaultsWhenHidden);
 }
 
 export function M_LoadDefaults() {
   // 1) Reset everything to the registered base values.
   for (const d of defaults) d.ref.set(d.defaultvalue);
 
-  // 2) Honour -config <name> (URL param).
+  // 2) Honour -config <name> (URL param). The normal profile retains the
+  // original key for compatibility; named configs are isolated browser
+  // profiles instead of aliases for the same storage entry.
+  defaultfile = DEFAULT_CONFIG_FILE;
   const i = M_CheckParm('-config');
   if (i !== 0 && i < myargc - 1) {
     defaultfile = myargv[i + 1];
@@ -78,26 +134,33 @@ export function M_LoadDefaults() {
   }
 
   // 3) Apply persisted overrides.
-  const text = localStorage.getItem('doom:defaults');
-  if (text == null) return;
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (line.length === 0) continue;
-    const m = line.match(/^(\S+)\s+(.*)$/);
-    if (m === null) continue;
-    const [, name, valStr] = m;
-    let parsed;
-    if (valStr.charAt(0) === '"') {
-      parsed = valStr.slice(1, valStr.lastIndexOf('"'));
-    } else if (valStr.startsWith('0x')) {
-      parsed = parseInt(valStr.slice(2), 16);
-    } else {
-      parsed = parseInt(valStr, 10);
-    }
-    for (const d of defaults) {
-      if (d.name === name) { d.ref.set(parsed); break; }
+  let text = null;
+  try {
+    text = localStorage.getItem(defaultsStorageKey());
+  } catch {
+    // Private browsing policies and disabled storage must not block startup.
+  }
+  if (text !== null) {
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (line.length === 0) continue;
+      const m = line.match(/^(\S+)\s+(.*)$/);
+      if (m === null) continue;
+      const [, name, valStr] = m;
+      let parsed;
+      if (valStr.charAt(0) === '"') {
+        parsed = valStr.slice(1, valStr.lastIndexOf('"'));
+      } else if (valStr.startsWith('0x')) {
+        parsed = parseInt(valStr.slice(2), 16);
+      } else {
+        parsed = parseInt(valStr, 10);
+      }
+      for (const d of defaults) {
+        if (d.name === name) { d.ref.set(parsed); break; }
+      }
     }
   }
+  M_StartDefaultsPersistence();
 }
 
 // ---------- Screenshot (canvas.toBlob) ----------
