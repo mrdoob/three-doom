@@ -57,6 +57,7 @@ import { D_DoomRafLoop } from './d_loop.js';
 import { D_PausePatchPosition, D_ShouldStartWipe } from './d_display_logic.js';
 import { R_CalculateCanvasView, R_GetViewSize } from './r_view.js';
 import { R_DrawViewBorder } from './r_border.js';
+import { P_FindMapThingType } from './p_mapthing_logic.js';
 import {
   G_EnsurePlayerTopology, G_CollectActivePlayers, G_StagePlayerTiccmds,
   G_ReadDemoTiccmds,
@@ -941,12 +942,9 @@ export async function D_DoomMain() {
     if ((mt.options & bit) === 0) return null;
     // Multiplayer-only flag.
     if (ds.netgame === false && (mt.options & MTF_MULTI) !== 0) return null;
-    // Find which mobjtype to spawn by doomednum.
-    let i = -1;
-    for (let k = 0; k < NUMMOBJTYPES; k++) {
-      if (mobjinfo[k].doomednum === mt.type) { i = k; break; }
-    }
-    if (i === -1) return null;
+    // Find which mobjtype to spawn by doomednum. Unknown eligible things are
+    // malformed map data and abort exactly as p_mobj.c:P_SpawnMapThing does.
+    const i = P_FindMapThingType(mt, mobjinfo, I_Error);
     // -nomonsters: skip monsters + lost souls.
     if (ds.nomonsters === true &&
         (i === 19 /*MT_SKULL*/ || (mobjinfo[i].flags & MF_COUNTKILL) !== 0)) return null;
