@@ -692,7 +692,7 @@ export async function D_DoomMain() {
   set_startmap(startupPlan.map);
   set_autostart(startupPlan.autostart);
   const demoPlan = D_DemoArgumentPlan(myargv);
-  const loadGamePlan = D_LoadGameArgumentPlan(myargv);
+  const loadGamePlan = D_LoadGameArgumentPlan(myargv, _PSaveg.SAVEGAME_SLOTS);
   // d_main.c appends every argument after the first -file until the next
   // option. Fetch them concurrently, but retain argument order so later PWADs
   // win W_CheckNumForName's backwards override search.
