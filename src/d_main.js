@@ -49,8 +49,9 @@ import * as _RB from './r_bsp.js';
 import * as _PMobj from './p_mobj.js';
 import * as _PTick from './p_tick.js';
 import * as _GGame from './g_game.js';
-import { D_DEFAULT_IWAD_NAMES, D_GuessGameModeFromWad } from './d_iwad.js';
-import { D_IwadLanguage } from './d_iwad_logic.js';
+import {
+  D_DEFAULT_IWAD_NAMES, D_GuessGameModeFromWad, D_IwadLanguage,
+} from './d_iwad.js';
 import {
   D_AdvanceSimulationClock,
   D_CreateVisibilitySuspension,

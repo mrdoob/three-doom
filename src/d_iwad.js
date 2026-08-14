@@ -1,7 +1,7 @@
 // Content-based IWAD mode detection. The browser can fetch any WAD under any
 // filename, so unlike the original filesystem probe we classify by map lumps.
 
-import { GameMode_t } from './doomdef.js';
+import { GameMode_t, Language_t } from './doomdef.js';
 import { W_ParseWadDirectory } from './w_wad_logic.js';
 
 // Match linuxdoom's full-game-first search order. The repository includes
@@ -42,4 +42,17 @@ export function D_GuessGameModeFromWad(buffer) {
   if (hasE2M1 || hasE3M1) return GameMode_t.registered;
   if (hasE1M1) return GameMode_t.shareware;
   return GameMode_t.indetermined;
+}
+
+export function D_IwadLanguage(filename, gamemode) {
+  if (gamemode !== GameMode_t.commercial || typeof filename !== 'string') {
+    return Language_t.english;
+  }
+  const suffix = filename.search(/[?#]/);
+  const assetPath = suffix < 0 ? filename : filename.slice(0, suffix);
+  const slash = Math.max(assetPath.lastIndexOf('/'), assetPath.lastIndexOf('\\'));
+  const basename = assetPath.slice(slash + 1);
+  return basename.toLowerCase() === 'doom2f.wad'
+    ? Language_t.french
+    : Language_t.english;
 }

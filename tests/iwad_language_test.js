@@ -1,5 +1,5 @@
 import { GameMode_t, Language_t } from '../src/doomdef.js';
-import { D_IwadLanguage } from '../src/d_iwad_logic.js';
+import { D_IwadLanguage } from '../src/d_iwad.js';
 
 const mainSource = await Deno.readTextFile(new URL('../src/d_main.js', import.meta.url));
 
