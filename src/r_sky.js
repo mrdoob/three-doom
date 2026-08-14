@@ -50,16 +50,14 @@ let _cachedFov    = -1;
 let _cachedAspect = -1;
 let _hfovHalfTan  = 1;
 
-export function R_ShutdownSky() {
-  const disposedMaterials = [];
-  if (_skyMat !== null) disposedMaterials.push(_skyMat);
-  if (_skyFloorMat !== null) disposedMaterials.push(_skyFloorMat);
-  if (_skyDepthMat !== null) disposedMaterials.push(_skyDepthMat);
-  if (_skyFloorDepthMat !== null) disposedMaterials.push(_skyFloorDepthMat);
-  if (_skyMat !== null) _skyMat.dispose();
-  if (_skyFloorMat !== null) _skyFloorMat.dispose();
-  if (_skyDepthMat !== null) _skyDepthMat.dispose();
-  if (_skyFloorDepthMat !== null) _skyFloorDepthMat.dispose();
+// Clear every sky-owned GPU resource and all derived projection state.
+// R_ShutdownSky owns disposal; R_BuildSky refuses to replace resources that
+// may still be attached to r_main's retained level root.
+function disposeAndResetSky() {
+  const disposedMaterials = [
+    _skyMat, _skyFloorMat, _skyDepthMat, _skyFloorDepthMat,
+  ].filter((material) => material !== null);
+  for (const material of disposedMaterials) material.dispose();
   if (_skyMap !== null) _skyMap.dispose();
   _skyMat = null;
   _skyFloorMat = null;
@@ -72,6 +70,17 @@ export function R_ShutdownSky() {
   skytexture = -1;
   skytexturemid = 0;
   return disposedMaterials;
+}
+
+function hasActiveSkyResources() {
+  return _skyMat !== null || _skyFloorMat !== null ||
+    _skyDepthMat !== null || _skyFloorDepthMat !== null || _skyMap !== null;
+}
+
+export function R_ShutdownSky() {
+  // r_main uses the returned identities to avoid disposing these materials a
+  // second time while traversing the old level root.
+  return disposeAndResetSky();
 }
 
 // Mirrors g_game.c:454-468.
@@ -175,10 +184,22 @@ void main() {
 `;
 
 export function R_BuildSky() {
+  if (hasActiveSkyResources()) {
+    throw new Error('R_BuildSky: call R_ShutdownSky before rebuilding');
+  }
+  // Reset projection and public identifiers before lookup. This is a no-op
+  // for GPU ownership because the active-resource guard above has passed.
+  disposeAndResetSky();
   R_InitSkyMap();
-  if (skytexture < 0) return null;
+  if (skytexture < 0) {
+    disposeAndResetSky();
+    return null;
+  }
   const baseMap = R_GetWallTexture(skytexture);
-  if (baseMap === null) return null;
+  if (baseMap === null) {
+    disposeAndResetSky();
+    return null;
+  }
 
   // Clone keeps sky state isolated from any wall that happens to share the
   // SKY1 lump (we don't change wrap settings here, but the clone is cheap
@@ -188,13 +209,6 @@ export function R_BuildSky() {
   map.wrapT = THREE.RepeatWrapping;
   map.needsUpdate = true;
 
-  // Dispose the previous level's material + cloned texture so a long session
-  // of map changes doesn't leak shader programs / uniform buffers / textures.
-  if (_skyMat !== null) _skyMat.dispose();
-  if (_skyFloorMat !== null) _skyFloorMat.dispose();
-  if (_skyDepthMat !== null) _skyDepthMat.dispose();
-  if (_skyFloorDepthMat !== null) _skyFloorDepthMat.dispose();
-  if (_skyMap !== null) _skyMap.dispose();
   _skyMap = map;
 
   _skyMat = new THREE.ShaderMaterial({

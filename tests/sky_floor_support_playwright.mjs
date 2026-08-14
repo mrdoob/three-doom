@@ -43,13 +43,15 @@ try {
     const video = await import('/src/i_video.js');
     const view = await import('/src/r_view.js');
     const depth = await import('/src/r_sprite_depth.js');
+    const rMain = await import('/src/r_main.js');
     const shader = await import('/src/r_shader.js');
     const sky = await import('/src/r_sky.js');
     dMain.D_ShutdownDoomLoop();
     view.R_SetViewSize(10);
 
-    // Rebuild once so this fixture tests the actual floor/ceiling occluders
-    // returned to r_plane, not a stand-alone approximation of them.
+    // Release the live level's ownership before constructing a stand-alone
+    // material set for this synthetic fixture.
+    rMain.R_Shutdown();
     const skyMaterials = sky.R_BuildSky();
     if (skyMaterials === null) throw new Error('E1M1 sky materials are unavailable');
     const skyMaterialList = [
