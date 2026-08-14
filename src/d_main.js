@@ -62,6 +62,7 @@ import { R_CalculateCanvasView, R_GetViewSize } from './r_view.js';
 import { R_DrawViewBorder } from './r_border.js';
 import { P_FindMapThingType } from './p_mapthing_logic.js';
 import { D_FileArgumentPlan } from './d_file_logic.js';
+import { D_FetchStartupAsset, D_STARTUP_ASSET_FETCH } from './d_asset_fetch.js';
 import {
   D_DemoArgumentPlan, D_LoadGameArgumentPlan, D_StartupArgumentPlan,
 } from './d_startup_logic.js';
@@ -654,44 +655,13 @@ async function findIwad() {
   const i = M_CheckParm('-iwad');
   if (i !== 0 && i < myargc - 1) {
     const name = myargv[i + 1];
-    return await fetchWad(name, true);
+    return await D_FetchStartupAsset(name, D_STARTUP_ASSET_FETCH.requiredIwad);
   }
   for (const name of D_DEFAULT_IWAD_NAMES) {
-    const wad = await fetchWad(name, false);
+    const wad = await D_FetchStartupAsset(name, D_STARTUP_ASSET_FETCH.defaultIwadProbe);
     if (wad !== null) return wad;
   }
   I_Error(`No IWAD found (tried ${D_DEFAULT_IWAD_NAMES.join(', ')})`);
-}
-
-async function fetchWad(path, required) {
-  console.log('Fetching', path);
-  let response;
-  try {
-    response = await fetch(path);
-  } catch (error) {
-    if (required) {
-      I_Error('Failed to load ' + path + ': ' + (error?.message ?? error));
-    }
-    // A command-line -file is optional in W_AddFile. Network failures are the
-    // browser equivalent of fopen returning -1: report it and keep trying the
-    // remaining ordered overlays.
-    console.warn('Skipping unavailable WAD', path, '(' + (error?.message ?? error) + ')');
-    return null;
-  }
-  if (!response.ok) {
-    if (required) I_Error('Failed to load ' + path + ': ' + response.status);
-    console.warn('Skipping unavailable WAD', path, '(' + response.status + ')');
-    return null;
-  }
-  try {
-    return { name: path, buffer: await response.arrayBuffer() };
-  } catch (error) {
-    if (required) {
-      I_Error('Failed to read ' + path + ': ' + (error?.message ?? error));
-    }
-    console.warn('Skipping unreadable WAD', path, '(' + (error?.message ?? error) + ')');
-    return null;
-  }
 }
 
 // ---------- D_DoomMain ----------
@@ -727,16 +697,21 @@ export async function D_DoomMain() {
   // option. Fetch them concurrently, but retain argument order so later PWADs
   // win W_CheckNumForName's backwards override search.
   const filePlan = D_FileArgumentPlan(myargv);
-  // W_AddFile treats command-line additions as optional: an unavailable PWAD
-  // is reported and skipped without preventing later overlays from loading.
+  // Command-line PWADs are optional: an unavailable file is reported and
+  // skipped without preventing later overlays from loading. External demos
+  // are optional here because their derived lump may already exist in the IWAD.
   const [overlayResults, demoFile] = await Promise.all([
-    Promise.all(filePlan.paths.map((path) => fetchWad(path, false))),
-    demoPlan === null ? null : fetchWad(demoPlan.path, false),
+    Promise.all(filePlan.paths.map((path) =>
+      D_FetchStartupAsset(path, D_STARTUP_ASSET_FETCH.optionalPwad)
+    )),
+    demoPlan === null
+      ? null
+      : D_FetchStartupAsset(demoPlan.path, D_STARTUP_ASSET_FETCH.externalDemo),
   ]);
   const overlays = overlayResults.filter((wad) => wad !== null);
-  // The 1993 executable rejected every -file with the shareware IWAD. The
-  // browser deliberately permits overlays: they cannot manufacture absent
-  // registered assets, and this keeps custom E1 maps usable with doom1.wad.
+  // Vanilla rejected -file when using the shareware IWAD. This browser port
+  // deliberately permits overlays so bundled doom1.wad can run user-supplied
+  // E1 content; modifiedgame still records that the option was present.
   doomstat.set_modifiedgame(filePlan.present);
   W_InitMultipleFiles([
     { name: iwad.name, buffer: iwad.buffer },
