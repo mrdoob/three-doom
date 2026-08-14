@@ -21,7 +21,11 @@ import { M_RegisterDoomDefaults } from './m_defaults.js';
 import { SCREENWIDTH, SCREENHEIGHT, gamestate_t, GameMode_t } from './doomdef.js';
 import { mus_intro, mus_dm2ttl, sfx_telept } from './sounds.js';
 import * as doomstat from './doomstat.js';
-import { gamestate, set_gamestate, set_gamemode, set_devparm, set_nomonsters, set_respawnparm, set_fastparm, set_gameepisode, set_gamemap, set_gameskill } from './doomstat.js';
+import {
+  gamestate, set_gamestate, set_gamemode, set_devparm, set_nomonsters,
+  set_respawnparm, set_fastparm, set_gameepisode, set_gamemap, set_gameskill,
+  set_startskill, set_startepisode, set_startmap, set_autostart,
+} from './doomstat.js';
 import {
   R_AnimateTextures, R_InitData, R_TextureNumForName, R_FlatNumForName,
   R_PrecacheLevel,
@@ -59,6 +63,7 @@ import { R_CalculateCanvasView, R_GetViewSize } from './r_view.js';
 import { R_DrawViewBorder } from './r_border.js';
 import { P_FindMapThingType } from './p_mapthing_logic.js';
 import { D_FileArgumentPlan } from './d_file_logic.js';
+import { D_StartupArgumentPlan } from './d_startup_logic.js';
 import {
   G_EnsurePlayerTopology, G_CollectActivePlayers, G_StagePlayerTiccmds,
   G_ReadDemoTiccmds,
@@ -705,6 +710,11 @@ export async function D_DoomMain() {
     I_Error('Unable to determine IWAD game mode: no MAP01 or ExM1 map marker found');
   }
   set_gamemode(detectedMode);
+  const startupPlan = D_StartupArgumentPlan(myargv, detectedMode);
+  set_startskill(startupPlan.skill);
+  set_startepisode(startupPlan.episode);
+  set_startmap(startupPlan.map);
+  set_autostart(startupPlan.autostart);
   // d_main.c appends every argument after the first -file until the next
   // option. Fetch them concurrently, but retain argument order so later PWADs
   // win W_CheckNumForName's backwards override search.
@@ -1134,40 +1144,18 @@ export async function D_DoomMain() {
     });
   }
 
-  // -warp E1M3 / ?map=E1M1 launches straight into a level.
-  const warp = parseMapParam();
-  if (warp !== null) {
+  // Native -skill / -episode / -warp and the browser -map alias autostart a
+  // real new game after the synchronous level-load hook has been installed.
+  if (startupPlan.autostart) {
     // d_main.c:1163-1164 — command-line autostart is a real new game, not a
     // raw map setup. G_InitNew applies -fast/-respawn state and marks the
     // session as a user game; G_DoLoadLevel then enters through the same
     // synchronous level-load path used by the game state machine.
-    _GGame.G_InitNew(2, warp.episode, warp.map);
+    _GGame.G_InitNew(startupPlan.skill, startupPlan.episode, startupPlan.map);
     _GGame.G_DoLoadLevel();
   } else {
     // Kick off the title screen demo loop.
     D_StartTitle();
   }
   D_DoomLoop();
-}
-
-function parseMapParam() {
-  const i = M_CheckParm('-warp');
-  if (i !== 0 && i < myargc - 1) {
-    const arg = myargv[i + 1].toUpperCase();
-    const m = arg.match(/^E(\d+)M(\d+)$/) || arg.match(/^MAP(\d+)$/);
-    if (m !== null) {
-      if (m.length === 3) return { episode: parseInt(m[1], 10), map: parseInt(m[2], 10) };
-      return { episode: 1, map: parseInt(m[1], 10) };
-    }
-  }
-  const j = M_CheckParm('-map');
-  if (j !== 0 && j < myargc - 1) {
-    const arg = myargv[j + 1].toUpperCase();
-    const m = arg.match(/^E(\d+)M(\d+)$/) || arg.match(/^MAP(\d+)$/);
-    if (m !== null) {
-      if (m.length === 3) return { episode: parseInt(m[1], 10), map: parseInt(m[2], 10) };
-      return { episode: 1, map: parseInt(m[1], 10) };
-    }
-  }
-  return null;
 }
