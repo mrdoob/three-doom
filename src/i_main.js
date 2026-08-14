@@ -1,10 +1,20 @@
 // Ported from: linuxdoom-1.10/i_main.c
-// Main program, simply calls D_DoomMain.
+// Browser entry point and startup error boundary.
 
 import { M_InitArgvFromLocation } from './m_argv.js';
-import { D_DoomMain } from './d_main.js';
+import { I_ShowStartupError } from './i_startup_error.js';
 
-M_InitArgvFromLocation();
+async function startDoom() {
+  try {
+    // Query decoding can fail synchronously. Import the game dynamically so
+    // module evaluation and asynchronous startup share this error boundary.
+    M_InitArgvFromLocation();
+    const { D_DoomMain } = await import('./d_main.js');
+    await D_DoomMain();
+  } catch (error) {
+    console.error('DOOM startup failed:', error);
+    I_ShowStartupError(error);
+  }
+}
 
-// D_DoomMain returns a promise (it awaits the WAD fetch).
-D_DoomMain().catch((err) => { console.error(err); });
+void startDoom();

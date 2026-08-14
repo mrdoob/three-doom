@@ -1158,5 +1158,13 @@ export async function D_DoomMain() {
     // Kick off the title screen demo loop.
     D_StartTitle();
   }
-  D_DoomLoop();
+  try {
+    // The browser loop resolves after scheduling its first RAF, but its late
+    // dynamic imports are still part of startup and must reach i_main's error
+    // boundary instead of becoming an unhandled rejection.
+    await D_DoomLoop();
+  } catch (error) {
+    D_ShutdownDoomLoop();
+    throw error;
+  }
 }
