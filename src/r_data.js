@@ -1,9 +1,8 @@
 // Ported from: linuxdoom-1.10/r_data.c
 // Preparation of textures/flats/sprites for rendering.
-// In the 3D port we build a single RGBA THREE.DataTexture per resolved name
-// at level load time (R_PrecacheLevel) rather than caching paletted columns.
+// In the 3D port we build one indexed THREE.DataTexture per resolved name at
+// level load time (R_PrecacheLevel) rather than caching paletted columns.
 
-import * as THREE from 'three';
 import { W_CheckNumForName, W_GetNumForName, W_CacheLumpName, W_CacheLumpNum, W_LumpLength } from './w_wad.js';
 import { I_Error } from './i_system.js';
 import { FRACBITS } from './m_fixed.js';
@@ -183,12 +182,12 @@ export function R_InitData() {
   R_InitFlats();
   R_InitSpriteLumps();
   R_InitColormaps();
-  // Palette + COLORMAP textures are built once and shared by every wall /
-  // flat ShaderMaterial. Sprites still use pre-decoded RGBA via THREE.Sprite.
+  // Palette + COLORMAP textures are built once and shared by every indexed
+  // wall, flat, and sprite ShaderMaterial.
   R_ShaderInit(playpal_rgba, colormaps);
 }
 
-// ---------- Composite texture builder (column posts -> RGBA) ----------
+// ---------- Composite texture builder (column posts -> index + alpha) ----------
 //
 // Vanilla R_GenerateComposite (r_data.c:228) composites patches column-by-column
 // into a paletted block. Columns covered by a single patch are accessed directly
@@ -197,14 +196,11 @@ export function R_InitData() {
 // two-sided midtexture via R_DrawMaskedColumn / R_RenderMaskedSegRange) show
 // the world behind it.
 //
-// In the 3D port we bake the composite straight into RGBA, leaving un-painted
-// pixels at alpha=0. r_segs.js then routes midtextures on two-sided linedefs
-// into a separate bucket whose material uses alphaTest — the GL equivalent of
-// vanilla's masked column path.
-//
-// Buffers are emitted as (indices, alphas) — kept as palette indices so the
-// fragment shader can apply COLORMAP remap and palette lookup at sample time.
-// R_MakeIndexedTexture packs them into an RG8 texture.
+// The 3D port keeps the composite as palette indices plus alpha, leaving
+// unpainted pixels transparent. R_MakeIndexedTexture packs both channels into
+// RG8 so the fragment shader can apply COLORMAP and PLAYPAL at draw time.
+// r_segs.js uses alphaTest for two-sided midtextures, the GL equivalent of
+// vanilla's masked-column path.
 function buildTextureIndexed(texnum) {
   const t = textures[texnum];
   // R_GetColumn masks every horizontal lookup before touching the composite.

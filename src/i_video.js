@@ -723,7 +723,7 @@ export function I_RenderView(targetScene = scene, targetCamera = camera) {
 }
 
 // I_FinishUpdate: present the frame. Paint the paletted screen onto the 2D
-// overlay; Three.js renders the 3D world separately (called from R_RenderPlayerView).
+// overlay; I_RenderView submits the Three.js world separately.
 export function I_FinishUpdate() {
   if (!V_IsPlaypalReady() || overlayCtx === null) return;
 

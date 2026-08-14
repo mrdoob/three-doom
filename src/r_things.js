@@ -34,7 +34,6 @@ export let sprites    = null;
 const sprtemp = new Array(29);
 for (let i = 0; i < 29; i++) sprtemp[i] = new spriteframe_t();
 let maxframe = -1;
-let spritename = '';
 
 function R_InstallSpriteLump(lump, frame, rotation, flipped) {
   // C declares `rotation` unsigned; in JS a malformed lump name (e.g. '/' at
@@ -66,7 +65,6 @@ export function R_InitSpriteDefs(namelist) {
   const start = firstspritelump - 1;
   const end   = lastspritelump  + 1;
   for (let i = 0; i < numsprites; i++) {
-    spritename = namelist[i];
     for (let k = 0; k < 29; k++) {
       sprtemp[k].rotate = -1; // sentinel
       for (let r = 0; r < 8; r++) { sprtemp[k].lump[r] = -1; sprtemp[k].flip[r] = 0; }

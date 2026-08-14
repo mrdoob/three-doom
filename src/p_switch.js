@@ -4,7 +4,7 @@
 // flipped back after `time` tics.
 
 import { sides } from './p_setup.js';
-import { R_TextureNumForName, R_CheckTextureNumForName } from './r_data.js';
+import { R_CheckTextureNumForName } from './r_data.js';
 import { I_Error } from './i_system.js';
 import { P_StartButtonInList } from './p_switch_logic.js';
 

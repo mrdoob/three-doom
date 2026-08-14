@@ -8,12 +8,11 @@ import {
 } from './i_video.js';
 import {
   V_Init, V_DrawPatch, V_DecodePatchToCanvas, V_DrawPatchAtCanvas,
-  screens, patch_t,
+  patch_t,
 } from './v_video.js';
 import { V_PaletteCSS } from './v_palette.js';
 import {
-  W_InitMultipleFiles, W_CheckNumForName, W_CacheLumpName, W_CacheLumpNum,
-  W_LumpLength,
+  W_InitMultipleFiles, W_CheckNumForName, W_CacheLumpName, W_LumpLength,
 } from './w_wad.js';
 import { M_CheckParm, myargv, myargc } from './m_argv.js';
 import { M_LoadDefaults } from './m_misc.js';
@@ -33,7 +32,7 @@ import {
 import { P_Random } from './m_random.js';
 import { ANG45, ANGLETOFINESHIFT, finecosine, finesine } from './tables.js';
 import { P_SetupLevel, P_SetExternals as P_SetupSetExternals } from './p_setup.js';
-import { R_NewMap, R_RenderPlayerView, R_SetupFrame, R_Shutdown } from './r_main.js';
+import { R_NewMap, R_SetupFrame, R_Shutdown } from './r_main.js';
 import * as _PSaveg from './p_saveg.js';
 import {
   ML_LINEDEFS, ML_SECTORS, ML_SIDEDEFS,
@@ -42,7 +41,6 @@ import {
 import { D_FreeCamera } from './d_freecamera.js';
 import { D_KeyboardInput } from './d_keyboard.js';
 import { players, consoleplayer } from './doomstat.js';
-import * as THREE from 'three';
 // Eagerly imported so loadLevel can run synchronously — vanilla's
 // G_DoLoadLevel is synchronous and demo determinism relies on the level
 // being fully set up before the same tic's P_Ticker runs.
@@ -914,9 +912,6 @@ export async function D_DoomMain() {
     P_AddActiveCeiling: pCeil.P_AddActiveCeiling,
     P_AddActivePlat: pPlats.P_AddActivePlat,
   });
-  // Make P_InitThinkers visible in loadLevel scope.
-  const { P_InitThinkers } = await import('./p_tick.js');
-
   const mobjsByMapThing = new Map();
   const bodyqueue = new Array(32); // g_game.c:210 — BODYQUESIZE
   if (typeof window !== 'undefined') window.__mobjsByMapThing = mobjsByMapThing;
