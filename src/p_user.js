@@ -2,8 +2,8 @@
 // Player thinker: reads player.cmd (ticcmd) and drives player.mo movement.
 
 import { ticcmd_t } from './d_ticcmd.js';
-import { mobj_t, MF_NOCLIP, MF_JUSTATTACKED, ONFLOORZ } from './p_mobj.js';
-import { weapontype_t, NUMWEAPONS } from './doomdef.js';
+import { MF_NOCLIP, MF_JUSTATTACKED } from './p_mobj.js';
+import { weapontype_t } from './doomdef.js';
 import { S_PLAY, S_PLAY_RUN1 } from './info.js';
 import * as doomstat from './doomstat.js';
 

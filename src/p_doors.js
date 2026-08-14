@@ -8,7 +8,7 @@
 //   raiseIn5Mins     — wait 5 minutes, then open.
 
 import { sectors, sides, numsectors } from './p_setup.js';
-import { T_MovePlane, RESULT_OK, RESULT_CRUSHED, RESULT_PASTDEST } from './p_floor.js';
+import { T_MovePlane, RESULT_CRUSHED, RESULT_PASTDEST } from './p_floor.js';
 
 const FRACUNIT       = 65536;
 const VDOORSPEED     = 2 * FRACUNIT;

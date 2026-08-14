@@ -9,12 +9,12 @@ import { P_MobjThinker, P_SetMobjState, P_SetThingPosition, P_UnsetThingPosition
 import { P_TeleportMove, P_CheckPosition } from './p_map.js';
 import { P_BlockThingsIterator } from './p_maputl.js';
 import { bmaporgx, bmaporgy } from './p_setup.js';
-import { players, consoleplayer, playeringame, gameepisode, gamemap, gamemode, gameskill, gametic, fastparm, netgame } from './doomstat.js';
+import { players, playeringame, gameepisode, gamemap, gamemode, gameskill, gametic, fastparm, netgame } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
 import { ANGLETOFINESHIFT, FINEMASK, finecosine, finesine } from './tables.js';
 import { P_CheckSight } from './p_sight.js';
 import { R_PointToAngle2 } from './r_bsp.js';
-import { MT_BRUISER, MT_CYBORG, MT_SPIDER, MT_HEADSHOT, MT_TROOPSHOT, MT_BRUISERSHOT, MT_FATSO, MT_FATSHOT, MT_VILE, MT_UNDEAD, MT_FIRE, MT_TRACER, MT_SKULL, MT_BABY, MT_PAIN, MT_BOSSBRAIN, MT_BOSSSPIT, MT_BOSSTARGET, MT_SPAWNSHOT, MT_SPAWNFIRE, MT_ROCKET, MT_ARACHPLAZ, MT_TROOP, MT_SERGEANT, MT_SHADOWS, MT_HEAD, MT_KNIGHT } from './info.js';
+import { MT_BRUISER, MT_CYBORG, MT_SPIDER, MT_HEADSHOT, MT_TROOPSHOT, MT_BRUISERSHOT, MT_FATSO, MT_FATSHOT, MT_VILE, MT_UNDEAD, MT_FIRE, MT_TRACER, MT_SKULL, MT_BABY, MT_PAIN, MT_BOSSTARGET, MT_SPAWNSHOT, MT_SPAWNFIRE, MT_ROCKET, MT_ARACHPLAZ, MT_TROOP, MT_SERGEANT, MT_SHADOWS, MT_HEAD, MT_KNIGHT } from './info.js';
 import { sfx_claw, sfx_slop } from './sounds.js';
 import { EV_DoFloor, lowerFloorToLowest, raiseToTexture } from './p_floor.js';
 import { EV_DoDoor } from './p_doors.js';
@@ -33,19 +33,6 @@ const MISSILERANGE = 32 * 64 << 16;
 function distApprox(dx, dy) {
   dx = Math.abs(dx); dy = Math.abs(dy);
   return dx < dy ? dx + dy - (dx >> 1) : dx + dy - (dy >> 1);
-}
-
-// Choose the nearest live player.
-function findClosestPlayer(actor) {
-  let best = null, bestDist = Infinity;
-  for (let i = 0; i < players.length; i++) {
-    if (playeringame[i] !== true) continue;
-    const p = players[i];
-    if (p === null || p === undefined || p.mo === null || p.health <= 0) continue;
-    const d = distApprox(p.mo.x - actor.x, p.mo.y - actor.y) / 65536;
-    if (d < bestDist) { bestDist = d; best = p; }
-  }
-  return best;
 }
 
 // p_enemy.c:499 — P_LookForPlayers. Round-robin through playeringame[]
@@ -265,8 +252,8 @@ function P_CheckMeleeRange(actor) {
 // p_enemy.c:197 — P_CheckMissileRange.
 function P_CheckMissileRange(actor) {
   if (!P_CheckSight(actor, actor.target)) return false;
-  if ((actor.flags & 64 /*MF_JUSTHIT*/) !== 0) {
-    actor.flags &= ~64;
+  if ((actor.flags & MF_JUSTHIT) !== 0) {
+    actor.flags &= ~MF_JUSTHIT;
     return true;
   }
   if (actor.reactiontime > 0) return false;
@@ -386,8 +373,6 @@ export function P_NoiseAlert(target, emitter) {
   P_RecursiveSound(emitter.subsector.sector, 0);
 }
 
-const MISSILERANGE_FX = 32 * 64 << 16;
-
 // Mirrors A_FaceTarget exactly (clears MF_AMBUSH + MF_SHADOW P_Random jitter)
 // so monster attacks that face their target consume the same RNG as vanilla.
 function faceTarget(actor) {
@@ -406,13 +391,13 @@ function hitscanAttack(actor, numShots, damageFn, sound) {
   // Autoaim slope so the bullet rises/falls to reach an enemy on a different
   // floor (matches vanilla A_PosAttack, A_SPosAttack, A_CPosAttack).
   let slope = 0;
-  if (_PMap !== null) slope = _PMap.P_AimLineAttack(actor, actor.angle, MISSILERANGE_FX);
+  if (_PMap !== null) slope = _PMap.P_AimLineAttack(actor, actor.angle, MISSILERANGE);
   if (sound !== undefined && sound !== 0 && _S !== null) _S.S_StartSound(actor, sound);
   for (let i = 0; i < numShots; i++) {
     // p_enemy.c: angle += (P_Random()-P_Random())<<20
     const spread = (P_Random() - P_Random()) << 20;
     const angle = (actor.angle + spread) >>> 0;
-    if (_PMap !== null) _PMap.P_LineAttack(actor, angle, MISSILERANGE_FX, slope, damageFn());
+    if (_PMap !== null) _PMap.P_LineAttack(actor, angle, MISSILERANGE, slope, damageFn());
   }
 }
 

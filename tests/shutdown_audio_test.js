@@ -73,7 +73,7 @@ Deno.test('Web Audio shutdown claims resources once and prevents recreation', as
     throw new Error('I_ShutdownSound is not terminal and idempotent');
   }
   const claim = sound.indexOf('const ownedContext = _ctx;\n  _ctx = null;');
-  const stopSources = sound.indexOf('try { entry.src.stop(); }');
+  const stopSources = sound.indexOf('stopSourceQuietly(entry.src);');
   const clearSources = sound.indexOf('_activeSources.clear();');
   const clearCache = sound.indexOf('_bufferCache.clear();');
   const close = sound.indexOf('await ownedContext.close();');

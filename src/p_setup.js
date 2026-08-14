@@ -19,7 +19,7 @@ import { M_ClearBox, M_AddToBox, BOXLEFT, BOXRIGHT, BOXBOTTOM, BOXTOP } from './
 import { GameMode_t, MAXPLAYERS } from './doomdef.js';
 import { gamemode, set_leveltime, playerstarts,
   set_totalkills, set_totalitems, set_totalsecret,
-  set_levelstarttic, set_bodyqueslot,
+  set_bodyqueslot,
   players, playeringame, consoleplayer, deathmatch, set_deathmatch_p,
   wminfo } from './doomstat.js';
 import { P_InitThinkers } from './p_tick.js';

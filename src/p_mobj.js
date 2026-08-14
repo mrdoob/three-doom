@@ -96,7 +96,6 @@ let R_PrecacheMobjState_external = null;
 export function P_SetExternals(refs) {
   if (refs.P_RemoveMobj != null) P_RemoveMobj_external = refs.P_RemoveMobj;
   if (refs.P_TryMove != null)    P_TryMove_external    = refs.P_TryMove;
-  if (refs.P_SlideMove != null)  P_SlideMove_external  = refs.P_SlideMove;
   if (refs.S_StartSound != null) S_StartSound_external = refs.S_StartSound;
   if (refs.S_StopSound != null)  S_StopSound_external  = refs.S_StopSound;
   if (refs.R_RemoveMobjSprite != null) R_RemoveMobjSprite_external = refs.R_RemoveMobjSprite;
@@ -104,7 +103,6 @@ export function P_SetExternals(refs) {
   if (refs.R_PrecacheMobjState != null) R_PrecacheMobjState_external = refs.R_PrecacheMobjState;
 }
 let P_TryMove_external    = null;
-let P_SlideMove_external  = null;
 let S_StartSound_external = null;
 let S_StopSound_external  = null;
 

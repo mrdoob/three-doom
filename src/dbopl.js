@@ -52,7 +52,6 @@ const SHIFT_KEYCODE = 24;
 const MASK_KSR     = 0x10;
 const MASK_SUSTAIN = 0x20;
 const MASK_VIBRATO = 0x40;
-const MASK_TREMOLO = 0x80;
 
 // OperatorState
 const OFF = 0, RELEASE = 1, SUSTAIN = 2, DECAY = 3, ATTACK = 4;
@@ -373,7 +372,7 @@ function Operator__Write20(self, chip, val) {
     Operator__UpdateFrequency(self);
   }
 }
-function Operator__Write40(self, chip, val) {
+function Operator__Write40(self, val) {
   if (!(self.reg40 ^ val)) return;
   self.reg40 = val;
   Operator__UpdateAttenuation(self);
@@ -870,7 +869,7 @@ export function Chip__WriteReg(self, reg, val) {
     case 0x40 >> 4:
     case 0x50 >> 4:
       index = ((reg >> 3) & 0x20) | (reg & 0x1f);
-      if (opForReg[index]) Operator__Write40(self.chan[opForReg[index].chan].op[opForReg[index].op], self, val);
+      if (opForReg[index]) Operator__Write40(self.chan[opForReg[index].chan].op[opForReg[index].op], val);
       break;
     case 0x60 >> 4:
     case 0x70 >> 4:

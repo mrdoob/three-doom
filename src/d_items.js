@@ -1,7 +1,7 @@
 // Ported from: linuxdoom-1.10/d_items.c, d_items.h
 // Weapon info: sprite states + ammo type per weapon.
 
-import { ammotype_t, NUMWEAPONS } from './doomdef.js';
+import { ammotype_t } from './doomdef.js';
 import {
   S_PUNCHUP, S_PUNCHDOWN, S_PUNCH, S_PUNCH1,
   S_PISTOLUP, S_PISTOLDOWN, S_PISTOL, S_PISTOL1, S_PISTOLFLASH,

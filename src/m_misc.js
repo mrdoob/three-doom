@@ -1,7 +1,6 @@
 // Ported from: linuxdoom-1.10/m_misc.c
 // Default config file (localStorage in browser), file I/O, screenshots.
 
-import { SCREENWIDTH, SCREENHEIGHT } from './doomdef.js';
 import { I_Error } from './i_system.js';
 import { M_CheckParm, myargc, myargv } from './m_argv.js';
 
@@ -18,7 +17,7 @@ export function M_WriteFile(name, source, length) {
     for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
     localStorage.setItem(KEY_PREFIX + name, btoa(bin));
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -44,12 +43,10 @@ export function M_ReadFile(name, result) {
 // without losing the C "*int_pointer" pattern.
 
 const defaults = [];
-let numdefaults = 0;
 let defaultfile = 'default.cfg';
 
 export function M_RegisterDefault(name, ref, defaultvalue) {
   defaults.push({ name, ref, defaultvalue });
-  numdefaults = defaults.length;
 }
 
 export function M_SaveDefaults() {
@@ -62,7 +59,11 @@ export function M_SaveDefaults() {
       lines.push(`${d.name}\t\t${v | 0}`);
     }
   }
-  try { localStorage.setItem('doom:defaults', lines.join('\n')); } catch (e) {}
+  try {
+    localStorage.setItem('doom:defaults', lines.join('\n'));
+  } catch {
+    // Persistence is best-effort when storage is unavailable or full.
+  }
 }
 
 export function M_LoadDefaults() {

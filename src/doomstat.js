@@ -1,7 +1,7 @@
 // Ported from: linuxdoom-1.10/doomstat.c, doomstat.h
 // All global state variables.
 
-import { GameMode_t, GameMission_t, Language_t, MAXPLAYERS, NUMAMMO } from './doomdef.js';
+import { GameMode_t, GameMission_t, Language_t, MAXPLAYERS } from './doomdef.js';
 import { mapthing_t } from './doomdata.js';
 import { ticcmd_t } from './d_ticcmd.js';
 

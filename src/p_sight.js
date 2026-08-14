@@ -1,7 +1,7 @@
 // Ported from: linuxdoom-1.10/p_sight.c
 // LineOfSight via BSP traversal with sight clipping.
 
-import { lines, numlines, nodes, numnodes, segs, subsectors, sectors, numsectors, rejectmatrix } from './p_setup.js';
+import { nodes, numnodes, segs, subsectors, numsectors, rejectmatrix } from './p_setup.js';
 import { ML_TWOSIDED } from './doomdata.js';
 import { FixedDiv, FixedMul } from './m_fixed.js';
 import { validcount, bumpValidCount } from './p_maputl.js';

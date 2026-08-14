@@ -3,7 +3,7 @@
 // bonus / stimpack / medikit / clip / shells / cells / rockets / armors,
 // triggered when the player overlaps a MF_SPECIAL mobj.
 
-import { mobj_t, MF_SPECIAL, MF_DROPPED, MF_NOTDMATCH } from './p_mobj.js';
+import { MF_DROPPED } from './p_mobj.js';
 import { MT_MISC0, MT_MISC1, MT_MISC2, MT_MISC3, MT_MISC4, MT_MISC5, MT_MISC6,
          MT_MISC7, MT_MISC8, MT_MISC9, MT_MISC10, MT_MISC11, MT_MISC12,
          MT_INV, MT_MISC13, MT_INS, MT_MISC14, MT_MISC15, MT_MISC16, MT_MEGA,
@@ -263,7 +263,6 @@ export function P_TouchSpecialThing(special, toucher) {
 }
 
 // P_KillMobj — transition target to its death state. p_inter.c:667
-import { mobjinfo, states } from './info.js';
 import { P_SetMobjState, MF_SHOOTABLE, MF_FLOAT, MF_SKULLFLY,
          MF_NOGRAVITY, MF_CORPSE, MF_DROPOFF, MF_NOCLIP,
          MF_COUNTKILL, MF_JUSTHIT, ONFLOORZ } from './p_mobj.js';

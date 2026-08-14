@@ -1,7 +1,7 @@
 // Ported from: linuxdoom-1.10/p_map.c
 // Movement clipping + hitscan attack + line activation.
 
-import { lines, numlines, bmaporgx, bmaporgy, bmapwidth, bmapheight } from './p_setup.js';
+import { bmaporgx, bmaporgy } from './p_setup.js';
 import { ML_BLOCKING, ML_BLOCKMONSTERS } from './doomdata.js';
 import { FINEMASK, ANGLETOFINESHIFT, finecosine, finesine, ANG180 } from './tables.js';
 import { P_BoxOnLineSide, P_PointOnLineSide, P_LineOpening, P_AproxDistance,

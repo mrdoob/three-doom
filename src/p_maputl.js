@@ -2,7 +2,7 @@
 // Map utility math: blockmap iteration, line-side checks, intercept solver,
 // path traversal.
 
-import { lines, numlines, blockmap, blockmaplump, bmapwidth, bmapheight, bmaporgx, bmaporgy, blocklinks } from './p_setup.js';
+import { lines, blockmap, blockmaplump, bmapwidth, bmapheight, bmaporgx, bmaporgy, blocklinks } from './p_setup.js';
 import { FixedMul, FixedDiv } from './m_fixed.js';
 
 export function P_AproxDistance(dx, dy) {

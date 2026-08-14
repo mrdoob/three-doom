@@ -3,7 +3,7 @@
 
 import { EV_VerticalDoor, EV_DoDoor, EV_DoLockedDoor,
          P_SpawnDoorCloseIn30, P_SpawnDoorRaiseIn5Mins } from './p_doors.js';
-import { EV_DoFloor, EV_BuildStairs, EV_RaiseDonut,
+import { EV_DoFloor, EV_BuildStairs,
          lowerFloor, lowerFloorToLowest, turboLower, raiseFloor, raiseFloorToNearest,
          raiseFloor24, raiseFloor24AndChange, raiseFloor512, raiseFloorTurbo,
          raiseToTexture, lowerAndChange, raiseFloorCrush,

@@ -323,26 +323,6 @@ export function P_PsprSetMobj(refs) {
   if (refs.PInter != null) _PInter = refs.PInter;
 }
 
-function hitscanPlayer(player, numShots, dmgFn, sound, ammoIdx, accurate) {
-  if (_S !== null && sound !== 0) _S.S_StartSound(player.mo, sound);
-  // C: P_SetMobjState player.mo S_PLAY_ATK2 — visual: attack pose.
-  if (_PMobj !== null && player.mo !== null && typeof _PMobj.P_SetMobjState === 'function') {
-    _PMobj.P_SetMobjState(player.mo, 155 /*S_PLAY_ATK2*/);
-  }
-  if (ammoIdx >= 0 && player.ammo[ammoIdx] > 0) player.ammo[ammoIdx]--;
-  // Muzzle flash.
-  if (_di !== null) {
-    const wi = _di.weaponinfo[player.readyweapon];
-    P_SetPsprite(player, ps_flash, wi.flashstate);
-  }
-  if (_PMap === null) return;
-  P_BulletSlope(player.mo);
-  for (let i = 0; i < numShots; i++) {
-    const spread = accurate ? 0 : ((P_Random() - P_Random()) << 18);
-    _PMap.P_LineAttack(player.mo, (player.mo.angle + spread) >>> 0, _PMap.ATTACKRANGE, bulletslope, dmgFn());
-  }
-}
-
 // MT_* indices needed for projectile spawning (matches info.h order).
 const MT_ROCKET = 33, MT_PLASMA = 34, MT_BFG = 35;
 
@@ -410,8 +390,8 @@ P_RegisterAction('A_FireShotgun', (player) => {
   if (player.player !== undefined) player = player.player;
   // p_pspr.c A_FireShotgun — order must match vanilla exactly: sound,
   // SetMobjState, ammo--, SetPsprite flash, P_BulletSlope, then 7×P_GunShot.
-  // P_GunShot internally rolls damage FIRST, then spread (1 + 2 P_Random),
-  // so we MUST NOT use the hitscanPlayer helper (which inverts that order).
+  // P_GunShot internally rolls damage first, then spread (1 + 2 P_Random),
+  // so keep that per-pellet ordering explicit here.
   if (_S !== null) _S.S_StartSound(player.mo, 2 /*sfx_shotgn*/);
   if (_PMobj !== null && player.mo !== null && typeof _PMobj.P_SetMobjState === 'function') {
     _PMobj.P_SetMobjState(player.mo, 155 /*S_PLAY_ATK2*/);

@@ -6,7 +6,7 @@
 // invokes the injected R_UpdateSectorLight to rewrite the floor/ceiling and
 // wall color attributes so the change is visible.
 
-import { sectors, numsectors } from './p_setup.js';
+import { sectors } from './p_setup.js';
 import { P_Random } from './m_random.js';
 
 let _P_AddThinker = null;

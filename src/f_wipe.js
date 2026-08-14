@@ -69,7 +69,9 @@ function _captureComposedFrame(canvas) {
         );
       }
     }
-  } catch (_) {}
+  } catch {
+    // A discarded or inaccessible WebGL buffer simply omits that layer.
+  }
   try {
     if (overlay !== null) {
       if (layout === null) {
@@ -88,7 +90,9 @@ function _captureComposedFrame(canvas) {
         );
       }
     }
-  } catch (_) {}
+  } catch {
+    // A detached overlay simply leaves the already-captured layers intact.
+  }
   return c;
 }
 

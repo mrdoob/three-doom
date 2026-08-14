@@ -8,7 +8,7 @@
 //   long  numsamples
 // Followed by raw unsigned 8-bit PCM samples.
 
-import { W_CacheLumpNum, W_GetNumForName, W_CheckNumForName } from './w_wad.js';
+import { W_CacheLumpNum, W_CheckNumForName } from './w_wad.js';
 import * as OPL from './i_oplmusic.js';
 
 let _ctx = null;        // AudioContext
@@ -56,6 +56,22 @@ function installResumeOnGesture() {
 // call. canDispatch() gates every audio output behind a running context — the
 // browser auto-resumes on first user gesture so the gate flips on its own.
 function canDispatch() { return _ctx !== null && _ctx.state === 'running'; }
+
+function stopSourceQuietly(source) {
+  try {
+    source.stop();
+  } catch {
+    // Web Audio throws when an already-stopped source is stopped again.
+  }
+}
+
+function disconnectNodeQuietly(node) {
+  try {
+    node?.disconnect();
+  } catch {
+    // Shutdown remains best-effort after the context invalidates its nodes.
+  }
+}
 
 function decodeDMX(bytes) {
   // Read header.
@@ -133,10 +149,10 @@ export function I_ShutdownSound() {
 
   for (const entry of _activeSources.values()) {
     entry.src.onended = null;
-    try { entry.src.stop(); } catch (_) {}
-    try { entry.src.disconnect(); } catch (_) {}
-    try { entry.gain?.disconnect(); } catch (_) {}
-    try { entry.panner?.disconnect(); } catch (_) {}
+    stopSourceQuietly(entry.src);
+    disconnectNodeQuietly(entry.src);
+    disconnectNodeQuietly(entry.gain);
+    disconnectNodeQuietly(entry.panner);
   }
   _activeSources.clear();
   try {
@@ -144,9 +160,11 @@ export function I_ShutdownSound() {
       ownedMusicNode.onaudioprocess = null;
       ownedMusicNode.disconnect();
     }
-  } catch (_) {}
-  try { ownedMaster?.disconnect(); } catch (_) {}
-  try { ownedMusicGain?.disconnect(); } catch (_) {}
+  } catch {
+    // The context may invalidate its processor while shutdown claims it.
+  }
+  disconnectNodeQuietly(ownedMaster);
+  disconnectNodeQuietly(ownedMusicGain);
   _bufferCache.clear();
   _sfxInfo = null;
 
@@ -217,7 +235,11 @@ export function I_StartSound(id, vol, sep, pitch, _priority) {
   if (_SINGLE_INSTANCE.has(id) === true) {
     for (const h of _activeSources.keys()) {
       const e = _activeSources.get(h);
-      if (e.id === id) { try { e.src.stop(); } catch (_) {} _activeSources.delete(h); break; }
+      if (e.id === id) {
+        stopSourceQuietly(e.src);
+        _activeSources.delete(h);
+        break;
+      }
     }
   }
   const ctx = getCtx();
@@ -245,7 +267,10 @@ export function I_StartSound(id, vol, sep, pitch, _priority) {
 
 export function I_StopSound(handle) {
   const entry = _activeSources.get(handle);
-  if (entry !== undefined) { try { entry.src.stop(); } catch (_) {} _activeSources.delete(handle); }
+  if (entry !== undefined) {
+    stopSourceQuietly(entry.src);
+    _activeSources.delete(handle);
+  }
 }
 export function I_SoundIsPlaying(handle) { return _activeSources.has(handle); }
 export function I_UpdateSoundParams(handle, vol, sep, _pitch) {

@@ -4,9 +4,9 @@
 
 import * as I from './i_sound.js';
 import { S_sfx } from './sounds_data.js';
-import { snd_SfxVolume, snd_MusicVolume, set_snd_SfxVolume, set_snd_MusicVolume,
+import { snd_SfxVolume, set_snd_SfxVolume, set_snd_MusicVolume,
   gameepisode, gamemap, gamemode, numChannels, players, consoleplayer } from './doomstat.js';
-import { ANG90, ANGLETOFINESHIFT, FINEMASK, finecosine, finesine } from './tables.js';
+import { ANGLETOFINESHIFT, FINEMASK, finesine } from './tables.js';
 import { R_PointToAngle2 } from './r_bsp.js';
 import { M_Random } from './m_random.js';
 import { S_ChooseChannel } from './s_channel_logic.js';
