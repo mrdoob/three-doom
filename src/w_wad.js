@@ -1,10 +1,12 @@
 // Ported from: linuxdoom-1.10/w_wad.c
 // Handles WAD file header, directory, lump I/O.
 //
-// In the browser, "files" come from fetch() and live as ArrayBuffer. Each
-// lumpinfo_t records the source buffer + position rather than a file handle.
+// In the browser, "files" usually come from fetch() as ArrayBuffers; sliced
+// typed-array views are accepted too. Each lumpinfo_t records the source byte
+// view + position rather than a file handle.
 
 import { I_Error } from './i_system.js';
+import { W_ByteView, W_ParseWadDirectory } from './w_wad_logic.js';
 
 // ---------- Types ----------
 // wadinfo_t  { identification: 'IWAD'|'PWAD', numlumps, infotableofs }
@@ -28,43 +30,23 @@ export let lumpcache = [];
 export function set_lumpinfo(v)  { lumpinfo = v; }
 export function set_numlumps(v)  { numlumps = v; }
 
-// Raw buffers, indexed by lumpinfo_t.handle.
+// Zero-copy byte views, indexed by lumpinfo_t.handle.
 const _fileBuffers = [];
 
 // ---------- Helpers ----------
 
-function readAsciiName(view, offset) {
-  // 8-char null-padded ASCII; uppercase for matching.
-  let s = '';
-  for (let i = 0; i < 8; i++) {
-    const b = view.getUint8(offset + i);
-    if (b === 0) break;
-    s += String.fromCharCode(b);
-  }
-  return s.toUpperCase();
-}
-
 function extractFileBase(path) {
-  // back up to last / or \, then take up to 8 uppercase chars before '.'
-  let start = path.length - 1;
-  while (start > 0 && path[start - 1] !== '/' && path[start - 1] !== '\\') start--;
-  let s = '';
-  for (let i = start; i < path.length && path[i] !== '.' && s.length < 8; i++) {
-    s += path[i].toUpperCase();
-  }
-  return s;
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  const basename = path.slice(slash + 1);
+  const dot = basename.indexOf('.');
+  return (dot < 0 ? basename : basename.slice(0, dot)).toUpperCase().slice(0, 8);
 }
 
-// ---------- W_AddFile ----------
+// ---------- File decoding ----------
 
-function W_AddFile(filename, buffer) {
-  const startlump = numlumps;
-  const view = new DataView(buffer);
-
-  const handle = _fileBuffers.length;
-  _fileBuffers.push(buffer);
-
+function W_DecodeFile(filename, buffer) {
   let fileinfo;
+  let bytes;
 
   // Detect WAD vs single-lump by extension.
   // Browser asset URLs may carry cache-busting query strings or fragments;
@@ -73,59 +55,57 @@ function W_AddFile(filename, buffer) {
   const assetPath = suffix < 0 ? filename : filename.slice(0, suffix);
   const ext = assetPath.slice(-3).toLowerCase();
   if (ext !== 'wad') {
-    fileinfo = [{ filepos: 0, size: buffer.byteLength, name: extractFileBase(filename) }];
-    numlumps++;
+    bytes = W_ByteView(buffer);
+    if (bytes === null) I_Error(`File ${filename} has no readable byte buffer`);
+    fileinfo = [{ filepos: 0, size: bytes.byteLength, name: extractFileBase(assetPath) }];
   } else {
-    const ident = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
-    if (ident !== 'IWAD' && ident !== 'PWAD') {
-      I_Error(`Wad file ${filename} doesn't have IWAD or PWAD id`);
-    }
-    const nlumps      = view.getInt32(4, true);
-    const infotableofs = view.getInt32(8, true);
-    fileinfo = new Array(nlumps);
-    for (let i = 0; i < nlumps; i++) {
-      const off = infotableofs + i * 16;
-      fileinfo[i] = {
-        filepos: view.getInt32(off + 0, true),
-        size:    view.getInt32(off + 4, true),
-        name:    readAsciiName(view, off + 8),
-      };
-    }
-    numlumps += nlumps;
+    const parsed = W_ParseWadDirectory(buffer);
+    if (parsed.valid !== true) I_Error(`Wad file ${filename} is invalid: ${parsed.error}`);
+    bytes = parsed.bytes;
+    fileinfo = parsed.lumps;
   }
 
-  // Append to lumpinfo array.
-  for (let i = startlump; i < numlumps; i++) {
-    const fi = fileinfo[i - startlump];
-    const li = new lumpinfo_t();
-    li.handle   = handle;
-    li.position = fi.filepos;
-    li.size     = fi.size;
-    li.name     = fi.name;
-    lumpinfo[i] = li;
-  }
-
-  console.log(' adding', filename, '(' + (numlumps - startlump) + ' lumps)');
+  return { bytes, fileinfo };
 }
 
 // ---------- W_InitMultipleFiles ----------
 
-// `filespecs` is an array of { name, buffer:ArrayBuffer }.
+// `filespecs` is an array of { name, buffer:ArrayBuffer|ArrayBufferView }.
 // (C signature takes an array of paths and reads them itself; in the
 // browser the host pre-fetches buffers and hands us both pieces.)
 export function W_InitMultipleFiles(filespecs) {
-  numlumps = 0;
-  lumpinfo = [];
-  _fileBuffers.length = 0;
+  const nextBuffers = [];
+  const nextLumpinfo = [];
+  const additions = [];
 
   for (const spec of filespecs) {
-    W_AddFile(spec.name, spec.buffer);
+    const { bytes, fileinfo } = W_DecodeFile(spec.name, spec.buffer);
+    const handle = nextBuffers.length;
+    nextBuffers.push(bytes);
+    additions.push({ name: spec.name, count: fileinfo.length });
+    for (const fi of fileinfo) {
+      const li = new lumpinfo_t();
+      li.handle   = handle;
+      li.position = fi.filepos;
+      li.size     = fi.size;
+      li.name     = fi.name;
+      nextLumpinfo.push(li);
+    }
   }
 
-  if (numlumps === 0) I_Error('W_InitFiles: no files found');
+  if (nextLumpinfo.length === 0) I_Error('W_InitFiles: no files found');
 
+  // Publish only after every source has validated, so a caught startup error
+  // cannot pair a partially replaced directory with the previous lump cache.
+  numlumps = nextLumpinfo.length;
+  lumpinfo = nextLumpinfo;
+  _fileBuffers.length = 0;
+  for (const bytes of nextBuffers) _fileBuffers.push(bytes);
   lumpcache = new Array(numlumps);
   for (let i = 0; i < numlumps; i++) lumpcache[i] = null;
+  for (const addition of additions) {
+    console.log(' adding', addition.name, '(' + addition.count + ' lumps)');
+  }
 }
 
 export function W_NumLumps() { return numlumps; }
@@ -160,7 +140,8 @@ export function W_LumpLength(lump) {
 export function W_ReadLump(lump, dest) {
   if (lump >= numlumps) I_Error(`W_ReadLump: ${lump} >= numlumps`);
   const l = lumpinfo[lump];
-  const src = new Uint8Array(_fileBuffers[l.handle], l.position, l.size);
+  const source = _fileBuffers[l.handle];
+  const src = source.subarray(l.position, l.position + l.size);
   dest.set(src.subarray(0, Math.min(dest.length, l.size)));
 }
 
@@ -173,7 +154,8 @@ export function W_CacheLumpNum(lump, _tag) {
   if (lumpcache[lump] === null) {
     const l = lumpinfo[lump];
     // A view into the file buffer — no copy.
-    lumpcache[lump] = new Uint8Array(_fileBuffers[l.handle], l.position, l.size);
+    const source = _fileBuffers[l.handle];
+    lumpcache[lump] = source.subarray(l.position, l.position + l.size);
   }
   return lumpcache[lump];
 }

@@ -2,6 +2,7 @@
 // filename, so unlike the original filesystem probe we classify by map lumps.
 
 import { GameMode_t } from './doomdef.js';
+import { W_ParseWadDirectory } from './w_wad_logic.js';
 
 // Match linuxdoom's full-game-first search order. The repository includes
 // doom1.wad, so putting shareware first would otherwise mask any full IWAD a
@@ -16,48 +17,17 @@ export const D_DEFAULT_IWAD_NAMES = Object.freeze([
   'doom1.wad',
 ]);
 
-function wadView(buffer) {
-  if (ArrayBuffer.isView(buffer)) {
-    return new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-  }
-  if (buffer instanceof ArrayBuffer) return new DataView(buffer);
-  return null;
-}
-
-function readName(view, offset) {
-  let name = '';
-  for (let i = 0; i < 8; i++) {
-    const c = view.getUint8(offset + i);
-    if (c === 0) break;
-    name += String.fromCharCode(c);
-  }
-  return name.toUpperCase();
-}
-
 export function D_GuessGameModeFromWad(buffer) {
-  const view = wadView(buffer);
-  if (view === null || view.byteLength < 12) return GameMode_t.indetermined;
-  const ident = String.fromCharCode(
-    view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3),
-  );
-  if (ident !== 'IWAD' && ident !== 'PWAD') return GameMode_t.indetermined;
-
-  const numlumps = view.getInt32(4, true);
-  const directory = view.getInt32(8, true);
-  if (numlumps < 0 || directory < 0 || directory > view.byteLength) {
-    return GameMode_t.indetermined;
-  }
-  if (numlumps > Math.floor((view.byteLength - directory) / 16)) {
-    return GameMode_t.indetermined;
-  }
+  const parsed = W_ParseWadDirectory(buffer);
+  if (parsed.valid !== true) return GameMode_t.indetermined;
 
   let hasMap01 = false;
   let hasE1M1 = false;
   let hasE2M1 = false;
   let hasE3M1 = false;
   let hasE4M1 = false;
-  for (let i = 0; i < numlumps; i++) {
-    const name = readName(view, directory + i * 16 + 8);
+  for (const lump of parsed.lumps) {
+    const name = lump.name;
     if (name === 'MAP01') hasMap01 = true;
     else if (name === 'E1M1') hasE1M1 = true;
     else if (name === 'E2M1') hasE2M1 = true;
