@@ -14,9 +14,123 @@ import * as OPL from './i_oplmusic.js';
 let _ctx = null;        // AudioContext
 let _master = null;     // master GainNode (sfx volume)
 let _musicGain = null;  // music GainNode
+let _visibilityGain = null; // immediate shared mute for hidden pages
 const _bufferCache = new Map(); // lumpName -> AudioBuffer
 let _soundShutdownStarted = false;
 let _soundShutdownPromise = null;
+let _visibilityHandler = null;
+let _contextStateHandler = null;
+let _visibilityOwnsSuspension = false;
+let _visibilitySuspendPending = null;
+let _visibilityResumePending = null;
+let _visibilityRequestGeneration = 0;
+let _visibilityLastRequest = null;
+
+function pageIsHidden() {
+  return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
+
+function requestVisibilitySuspend(context) {
+  if (_visibilitySuspendPending !== null || context.state === 'closed') return;
+  const generation = ++_visibilityRequestGeneration;
+  _visibilityOwnsSuspension = true;
+  _visibilityLastRequest = 'suspend';
+  let request;
+  try {
+    request = context.suspend();
+  } catch {
+    _visibilityOwnsSuspension = false;
+    _visibilityLastRequest = null;
+    return;
+  }
+  const pending = Promise.resolve(request).then(
+    () => true,
+    () => false,
+  ).then((succeeded) => {
+    if (_visibilitySuspendPending === pending) _visibilitySuspendPending = null;
+    if (_soundShutdownStarted === true || _ctx !== context) return;
+    if (succeeded !== true) {
+      if (_visibilityRequestGeneration === generation) {
+        _visibilityOwnsSuspension = false;
+        _visibilityLastRequest = null;
+      }
+      return;
+    }
+    reconcileAudioVisibility();
+  });
+  _visibilitySuspendPending = pending;
+}
+
+function requestVisibilityResume(context) {
+  if (_visibilityResumePending !== null || context.state === 'closed') return;
+  const generation = ++_visibilityRequestGeneration;
+  _visibilityLastRequest = 'resume';
+  let request;
+  try {
+    request = context.resume();
+  } catch {
+    _visibilityOwnsSuspension = false;
+    _visibilityLastRequest = null;
+    return;
+  }
+  const pending = Promise.resolve(request).then(
+    () => true,
+    () => false,
+  ).then((succeeded) => {
+    if (_visibilityResumePending === pending) _visibilityResumePending = null;
+    if (_soundShutdownStarted === true || _ctx !== context) return;
+    // If browser policy rejects this automatic resume, relinquish ownership;
+    // the existing foreground gesture handler remains the retry path.
+    if (_visibilityRequestGeneration === generation) {
+      _visibilityOwnsSuspension = false;
+      _visibilityLastRequest = null;
+    }
+    if (succeeded === true) reconcileAudioVisibility();
+  });
+  _visibilityResumePending = pending;
+}
+
+// Page Visibility already freezes Doom's simulation clock. Mute immediately,
+// then suspend the shared Web Audio context so music, in-flight effects, and
+// mixer CPU all stop in a background tab. The statechange hook also catches a
+// browser changing an autoplay-suspended or interrupted context behind us.
+function reconcileAudioVisibility() {
+  const context = _ctx;
+  if (_soundShutdownStarted === true || context === null) return;
+  const hidden = pageIsHidden();
+  if (_visibilityGain !== null) _visibilityGain.gain.value = hidden ? 0 : 1;
+
+  if (hidden === true) {
+    if (context.state === 'running' ||
+        (context.state === 'interrupted' && _visibilityLastRequest !== 'suspend')) {
+      requestVisibilitySuspend(context);
+    }
+    return;
+  }
+  if (_visibilityOwnsSuspension !== true) return;
+  if (context.state === 'suspended' || context.state === 'interrupted') {
+    requestVisibilityResume(context);
+  } else if (context.state === 'running' && _visibilitySuspendPending === null) {
+    _visibilityOwnsSuspension = false;
+    _visibilityLastRequest = null;
+  }
+}
+
+function installVisibilitySuspension(context) {
+  if (_visibilityHandler !== null || typeof document === 'undefined') return;
+  _visibilityHandler = reconcileAudioVisibility;
+  _contextStateHandler = reconcileAudioVisibility;
+  document.addEventListener('visibilitychange', _visibilityHandler);
+  context.addEventListener('statechange', _contextStateHandler);
+  reconcileAudioVisibility();
+}
+
+function resumeAudioOnGesture() {
+  const context = _ctx;
+  if (_soundShutdownStarted === true || context === null || _ctx !== context ||
+      pageIsHidden() === true || context.state === 'running') return;
+  context.resume().catch(() => {});
+}
 
 function getCtx() {
   // Page teardown is terminal. D_DoomMain can still resume
@@ -25,14 +139,20 @@ function getCtx() {
   if (_soundShutdownStarted === true) return null;
   if (_ctx === null) {
     _ctx = new (window.AudioContext || window.webkitAudioContext)();
-    _master    = _ctx.createGain(); _master.gain.value = 1.0; _master.connect(_ctx.destination);
+    _visibilityGain = _ctx.createGain();
+    _visibilityGain.gain.value = pageIsHidden() === true ? 0 : 1;
+    _visibilityGain.connect(_ctx.destination);
+    _master = _ctx.createGain();
+    _master.gain.value = 1.0;
+    _master.connect(_visibilityGain);
     // Music bus: the OPL engine (i_oplmusic.js) renders into a ScriptProcessor
     // that feeds this gain. The chip output is pre-tuned to sit below clipping,
     // so no limiter is needed; _musicGain is the volume control. It MUST connect
     // to the destination.
     _musicGain = _ctx.createGain(); _musicGain.gain.value = MUSIC_TRIM * (8 / 15);
-    _musicGain.connect(_ctx.destination);
+    _musicGain.connect(_visibilityGain);
     installResumeOnGesture();
+    installVisibilitySuspension(_ctx);
   }
   return _ctx;
 }
@@ -45,7 +165,7 @@ let _resumeHandler = null;
 function installResumeOnGesture() {
   if (_resumeInstalled || typeof window === 'undefined') return;
   _resumeInstalled = true;
-  _resumeHandler = () => { if (_ctx !== null && _ctx.state !== 'running') _ctx.resume().catch(() => {}); };
+  _resumeHandler = resumeAudioOnGesture;
   for (const ev of ['pointerdown', 'mousedown', 'keydown', 'touchstart']) {
     window.addEventListener(ev, _resumeHandler, { passive: true });
   }
@@ -137,7 +257,23 @@ export function I_ShutdownSound() {
   _master = null;
   const ownedMusicGain = _musicGain;
   _musicGain = null;
+  const ownedVisibilityGain = _visibilityGain;
+  _visibilityGain = null;
   _oplReady = false;
+  _visibilityOwnsSuspension = false;
+  _visibilitySuspendPending = null;
+  _visibilityResumePending = null;
+  _visibilityRequestGeneration++;
+  _visibilityLastRequest = null;
+
+  if (_visibilityHandler !== null && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', _visibilityHandler);
+  }
+  if (_contextStateHandler !== null && ownedContext !== null) {
+    ownedContext.removeEventListener('statechange', _contextStateHandler);
+  }
+  _visibilityHandler = null;
+  _contextStateHandler = null;
 
   if (_resumeHandler !== null && typeof window !== 'undefined') {
     for (const ev of ['pointerdown', 'mousedown', 'keydown', 'touchstart']) {
@@ -165,6 +301,7 @@ export function I_ShutdownSound() {
   }
   disconnectNodeQuietly(ownedMaster);
   disconnectNodeQuietly(ownedMusicGain);
+  disconnectNodeQuietly(ownedVisibilityGain);
   _bufferCache.clear();
   _sfxInfo = null;
 
