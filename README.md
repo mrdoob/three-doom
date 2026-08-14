@@ -8,7 +8,7 @@ https://mrdoob.github.io/three-doom/
 
 ### Dev Log
 
-https://x.com/mrdoob/status/2054075364432031991
+https://x.com/mrdoob/status/2059803097367732614
 
 ### Assets
 

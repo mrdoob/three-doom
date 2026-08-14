@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
-const QUIT_LINK = 'https://x.com/mrdoob/status/2054075364432031991';
+const QUIT_LINK = 'https://x.com/mrdoob/status/2059803097367732614';
 const launchOptions = { headless: true };
 if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) {
   launchOptions.executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;

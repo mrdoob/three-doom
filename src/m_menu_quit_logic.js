@@ -1,5 +1,5 @@
 // Browser-specific destination shown after the player confirms Quit.
-export const QUIT_LINK = 'https://x.com/mrdoob/status/2054075364432031991';
+export const QUIT_LINK = 'https://x.com/mrdoob/status/2059803097367732614';
 export const QUIT_CONFIRM_KEY = 0x79; // lowercase y
 
 // The checked-in Linux Doom dstrings.c omits a comma at each game-family
