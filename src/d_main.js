@@ -1137,7 +1137,12 @@ export async function D_DoomMain() {
   // -warp E1M3 / ?map=E1M1 launches straight into a level.
   const warp = parseMapParam();
   if (warp !== null) {
-    loadLevel(warp.episode, warp.map, 2);
+    // d_main.c:1163-1164 — command-line autostart is a real new game, not a
+    // raw map setup. G_InitNew applies -fast/-respawn state and marks the
+    // session as a user game; G_DoLoadLevel then enters through the same
+    // synchronous level-load path used by the game state machine.
+    _GGame.G_InitNew(2, warp.episode, warp.map);
+    _GGame.G_DoLoadLevel();
   } else {
     // Kick off the title screen demo loop.
     D_StartTitle();
