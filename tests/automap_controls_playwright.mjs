@@ -39,6 +39,7 @@ try {
     const palette = await import('/src/v_palette.js');
     const setup = await import('/src/p_setup.js');
     const mapData = await import('/src/doomdata.js');
+    const bsp = await import('/src/r_bsp.js');
 
     menu.M_ClearMenus();
     doomstat.set_gamestate(0 /*GS_LEVEL*/);
@@ -47,6 +48,26 @@ try {
     if (doomstat.automapactive === true) automap.AM_Stop();
     while (menu.getScreenblocks() < 11) menu.M_SizeDisplay(1);
     const fullscreenStatusBeforeMap = menu.isStatusBarVisible();
+
+    // The retained renderer has no native R_StoreWallRange call, so
+    // R_SetupFrame runs a visibility-only BSP/solid-column walk for ML_MAPPED.
+    // At the E1M1 start this must discover walls through the open north-facing
+    // portals, not merely the five edges of the leaf containing the player.
+    const initialPlayer = doomstat.players[doomstat.consoleplayer];
+    const currentSubsector = bsp.R_PointInSubsector(
+      initialPlayer.mo.x,
+      initialPlayer.mo.y,
+    );
+    const currentLines = new Set();
+    for (let i = 0; i < currentSubsector.numlines; i++) {
+      currentLines.add(setup.segs[currentSubsector.firstline + i].linedef);
+    }
+    const mappedBeforeMap = setup.lines.filter(
+      (line) => (line.flags & mapData.ML_MAPPED) !== 0,
+    );
+    const mappedOutsideCurrentSubsector = mappedBeforeMap.filter(
+      (line) => !currentLines.has(line),
+    ).length;
 
     const key = (type, code, value) => document.dispatchEvent(new KeyboardEvent(type, {
       code,
@@ -229,6 +250,8 @@ try {
       fullscreenStatusBeforeMap,
       fullscreenStatusOnMap,
       mapStatusDraws,
+      mappedBeforeMap: mappedBeforeMap.length,
+      mappedOutsideCurrentSubsector,
       rendererFramesDuringMapIdle,
       mappedWhileMapOpen,
       initialGridStrokes: initialDraw.gridStrokes,
@@ -270,6 +293,12 @@ try {
       before: result.fullscreenStatusBeforeMap,
       onMap: result.fullscreenStatusOnMap,
       draws: result.mapStatusDraws,
+    })}`);
+  }
+  if (result.mappedBeforeMap !== 31 || result.mappedOutsideCurrentSubsector !== 31) {
+    failures.push(`visibility BSP discovery mismatch: ${JSON.stringify({
+      mapped: result.mappedBeforeMap,
+      outside: result.mappedOutsideCurrentSubsector,
     })}`);
   }
   if (result.rendererFramesDuringMapIdle !== 0 || result.mappedWhileMapOpen !== 0) {

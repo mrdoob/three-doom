@@ -5,8 +5,7 @@
 
 import * as THREE from 'three';
 import { camera, renderer, scene, I_RenderView } from './i_video.js';
-import { players, consoleplayer, viewangleoffset } from './doomstat.js';
-import { ANG90 } from './tables.js';
+import { players, viewangleoffset } from './doomstat.js';
 import { R_BuildWalls, R_ShutdownWalls } from './r_segs.js';
 import { R_BuildPlanes, R_ShutdownPlanes } from './r_plane.js';
 import {
@@ -17,9 +16,8 @@ import { R_ClearMeshRegistry, R_PrecacheLevel } from './r_data.js';
 import { R_PrecachePlayerSprites } from './r_psprite.js';
 import { P_SwitchTexturePair } from './p_switch.js';
 import { R_BuildSky, R_UpdateSky, R_ShutdownSky } from './r_sky.js';
-import { R_PointInSubsector } from './r_bsp.js';
+import { R_VisibleLinedefs } from './r_bsp.js';
 import { R_SetViewLighting } from './r_shader.js';
-import { segs } from './p_setup.js';
 import { ML_MAPPED } from './doomdata.js';
 import { R_GetViewSize } from './r_view.js';
 import { R_CreateSpriteDepthPass, spriteFloorPassUniform } from './r_sprite_depth.js';
@@ -145,24 +143,18 @@ export function R_SetupFrame(player) {
   camera.rotation.order = 'YXZ';
   camera.rotation.set(0, ang - Math.PI / 2, 0);
 
-  // Fog-of-war for am_map: r_segs.c:398 sets ML_MAPPED on every linedef whose
-  // seg is drawn during BSP traversal. The 3D port doesn't traverse, so as a
-  // pragmatic approximation we mark the linedefs of the player's current
-  // subsector each frame. The result is "rooms you've stood in" — coarser
-  // than vanilla's frustum-cone but enough for the automap to hide unvisited
-  // geometry instead of revealing the whole map.
-  if (segs !== null) {
-    const ss = R_PointInSubsector(mo.x, mo.y);
-    if (ss !== undefined && ss !== null) {
-      const first = ss.firstline;
-      const n = ss.numlines;
-      for (let i = 0; i < n; i++) {
-        const sg = segs[first + i];
-        if (sg !== undefined && sg.linedef !== null) {
-          sg.linedef.flags |= ML_MAPPED;
-        }
-      }
-    }
+  // r_segs.c:R_StoreWallRange marks each linedef which survives the
+  // front-to-back BSP solid-column clip. The retained renderer does not need
+  // that walk for drawing, so reproduce its visibility decision solely for
+  // automap fog-of-war.
+  const view = R_GetViewSize();
+  for (const linedef of R_VisibleLinedefs(
+    mo.x,
+    mo.y,
+    (mo.angle + viewangleoffset) >>> 0,
+    view.viewwidth,
+  )) {
+    linedef.flags |= ML_MAPPED;
   }
 }
 

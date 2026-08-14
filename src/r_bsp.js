@@ -3,9 +3,10 @@
 // this module is now about geometric queries (R_PointOnSide, R_PointInSubsector)
 // rather than the render-time wall-clip walk.
 
-import { nodes, numnodes, subsectors } from './p_setup.js';
+import { nodes, numnodes, subsectors, segs } from './p_setup.js';
 import { NF_SUBSECTOR } from './doomdata.js';
 import { FixedMul } from './m_fixed.js';
+import { R_CollectVisibleLinedefs } from './r_visibility_logic.js';
 
 export let firstseg = null;
 export let curline  = null;
@@ -99,6 +100,24 @@ export function R_PointToAngle(x, y) {
 }
 export function R_PointToAngle2(x1, y1, x2, y2) {
   return _R_PointToAngle(x2 - x1, y2 - y1);
+}
+
+// Visibility-only counterpart to the classic render-time BSP walk. Three.js
+// retains the whole map, but automap fog-of-war still needs the linedefs which
+// survived Doom's front-to-back horizontal solid-span clipping.
+export function R_VisibleLinedefs(viewx, viewy, viewangle, viewwidth) {
+  return R_CollectVisibleLinedefs({
+    viewx,
+    viewy,
+    viewangle,
+    viewwidth,
+    nodes,
+    numnodes,
+    subsectors,
+    segs,
+    pointOnSide: R_PointOnSide,
+    pointToAngle2: R_PointToAngle2,
+  });
 }
 
 // Render-time BSP walk — Three.js handles visibility so we don't traverse,
