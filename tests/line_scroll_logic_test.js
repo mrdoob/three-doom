@@ -24,7 +24,9 @@ Deno.test('scrolling lines update sidedefs and their baked Three.js UV slices', 
     if (!spec.includes(required)) throw new Error(`missing scrolling-line step: ${required}`);
   }
   if (!renderer.includes('export function R_UpdateLineTextureOffset(line)') ||
-      !renderer.includes('uv.setX(c.baseIdx + 0, u0)')) {
+      !renderer.includes('uv.setX(c.baseIdx + 0, u0)') ||
+      !renderer.includes('c.length, c.columnPeriod') ||
+      !renderer.includes('length, columnPeriod }')) {
     throw new Error('scrolling linedef UVs are not updated in place');
   }
   if (!main.includes('R_UpdateLineTextureOffset: rSegs.R_UpdateLineTextureOffset')) {

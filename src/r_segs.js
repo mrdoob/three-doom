@@ -15,6 +15,7 @@ import { R_GetWallTexture, textures, R_RegisterWallMesh } from './r_data.js';
 import { R_MakeDoomMaterial } from './r_shader.js';
 import { top, middle, bottom, P_IsSwitchTexture } from './p_switch.js';
 import { R_NeedsTerminalDepthOccluder } from './r_wall_occlusion.js';
+import { R_TextureColumnPeriod, R_WallTextureUV } from './r_texture_logic.js';
 
 // Per-sector wall-quad contributions, so R_UpdateSectorWalls can re-write the
 // Y coordinates when a door/lift/floor moves. Each entry knows how to
@@ -65,8 +66,9 @@ export function R_UpdateLineTextureOffset(line) {
   if (side === undefined) return;
   for (const c of contributions) {
     if (c.bucket.mesh === undefined) continue;
-    const u0 = (side.textureoffset / 65536) / c.texWidth;
-    const u1 = ((side.textureoffset / 65536) + c.length) / c.texWidth;
+    const { u0, u1 } = R_WallTextureUV(
+      side.textureoffset / 65536, c.length, c.columnPeriod,
+    );
     const uv = c.bucket.mesh.geometry.attributes.uv;
     uv.setX(c.baseIdx + 0, u0);
     uv.setX(c.baseIdx + 1, u1);
@@ -303,8 +305,8 @@ export function R_BuildWalls(scene) {
       x2, zTop,    -y2,
       x1, zTop,    -y1,
     );
-    const u0 = uOffset / tex.width;
-    const u1 = (uOffset + length) / tex.width;
+    const columnPeriod = R_TextureColumnPeriod(tex.width);
+    const { u0, u1 } = R_WallTextureUV(uOffset, length, columnPeriod);
     const { vBottom, vTop } = uvFromAnchor(anchorY, rowoffset, zTop, zBottom, tex.height);
     if (frontFacing === true) {
       b.uvs.push(u0, vBottom, u1, vBottom, u1, vTop, u0, vTop);
@@ -323,7 +325,7 @@ export function R_BuildWalls(scene) {
         contributions = [];
         _scrollWalls.set(switchLine, contributions);
       }
-      contributions.push({ bucket: b, baseIdx, length, texWidth: tex.width });
+      contributions.push({ bucket: b, baseIdx, length, columnPeriod });
     }
     return { bucket: b, baseIdx };
   }

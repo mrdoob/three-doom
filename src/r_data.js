@@ -12,6 +12,7 @@ import { R_MakeIndexedTexture, R_ShaderInit } from './r_shader.js';
 import { sectors, sides } from './p_setup.js';
 import { gamemode, gameepisode, gamemap } from './doomstat.js';
 import { GameMode_t } from './doomdef.js';
+import { R_TextureColumnPeriod } from './r_texture_logic.js';
 
 // ---------- Lump ranges ----------
 export let firstflat = 0, lastflat = 0, numflats = 0;
@@ -124,9 +125,7 @@ export function R_InitTextures() {
   texturewidthmask = new Int32Array(numtextures);
   textureheight    = new Int32Array(numtextures);
   for (let i = 0; i < numtextures; i++) {
-    let j = 1;
-    while (j * 2 <= textures[i].width) j <<= 1;
-    texturewidthmask[i] = j - 1;
+    texturewidthmask[i] = R_TextureColumnPeriod(textures[i].width) - 1;
     textureheight[i] = textures[i].height << FRACBITS;
   }
   // Animation translation tables (identity by default).
@@ -208,7 +207,11 @@ export function R_InitData() {
 // R_MakeIndexedTexture packs them into an RG8 texture.
 function buildTextureIndexed(texnum) {
   const t = textures[texnum];
-  const w = t.width, h = t.height;
+  // R_GetColumn masks every horizontal lookup before touching the composite.
+  // Columns beyond the next-lower power-of-two period are unreachable in the
+  // native renderer, so omit them from the repeating GPU texture as well. Keep
+  // t.width unchanged: it is the WAD's declared metadata, not its sample period.
+  const w = R_TextureColumnPeriod(t.width), h = t.height;
   const indices = new Uint8Array(w * h);
   const alphas  = new Uint8Array(w * h); // zero-initialised: alpha=0 = transparent
   for (const pp of t.patches) {
