@@ -52,6 +52,7 @@ import * as _PMobj from './p_mobj.js';
 import * as _PTick from './p_tick.js';
 import * as _GGame from './g_game.js';
 import { D_DEFAULT_IWAD_NAMES, D_GuessGameModeFromWad } from './d_iwad.js';
+import { D_IwadLanguage } from './d_iwad_logic.js';
 import {
   D_AdvanceSimulationClock,
   D_CreateVisibilitySuspension,
@@ -712,6 +713,10 @@ export async function D_DoomMain() {
     I_Error('Unable to determine IWAD game mode: no MAP01 or ExM1 map marker found');
   }
   set_gamemode(detectedMode);
+  // Linux Doom selects its French intermission assets specifically when the
+  // chosen commercial IWAD is named doom2f.wad. Publish English explicitly
+  // for every other boot so a repeated embedded startup cannot retain it.
+  doomstat.set_language(D_IwadLanguage(iwad.name, detectedMode));
   const startupPlan = D_StartupArgumentPlan(myargv, detectedMode);
   set_startskill(startupPlan.skill);
   set_startepisode(startupPlan.episode);

@@ -46,6 +46,7 @@ try {
       respawnmonsters: doomstat.respawnmonsters,
       fastparm: doomstat.fastparm,
       nomonsters: doomstat.nomonsters,
+      language: doomstat.language,
       projectileSpeeds: {
         bruiser: info.mobjinfo[info.MT_BRUISERSHOT].speed / FRACUNIT,
         head: info.mobjinfo[info.MT_HEADSHOT].speed / FRACUNIT,
@@ -69,6 +70,7 @@ try {
     failures.push(`-fast was not applied by G_InitNew: ${JSON.stringify(result.projectileSpeeds)}`);
   }
   if (!result.nomonsters) failures.push('-nomonsters was cleared during autostart');
+  if (result.language !== 0) failures.push(`ordinary IWAD did not reset English: ${result.language}`);
   if (pageErrors.length !== 0) failures.push(`page errors: ${pageErrors.join('; ')}`);
   if (failures.length !== 0) throw new Error(failures.join('\n'));
 
