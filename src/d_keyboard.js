@@ -7,7 +7,7 @@
 import { renderer, I_RegisterGraphicsShutdownHook, I_TranslateKey } from './i_video.js';
 import { BT_CHANGE, BT_SPECIAL, BTS_PAUSE, BT_WEAPONSHIFT, evtype_t } from './d_event.js';
 import { KEY_EQUALS } from './doomdef.js';
-import { AM_Responder } from './am_map.js';
+import { AM_ResetControls, AM_Responder } from './am_map.js';
 import { cht_HandleKey } from './m_cheat.js';
 import { G_NextDisplayPlayer, G_ShouldCycleDisplayPlayer } from './g_spy_logic.js';
 import {
@@ -254,6 +254,32 @@ function resetLevelInput() {
   sendpause = state.sendpause;
 }
 
+// Browsers do not guarantee matching keyup/mouseup events after focus leaves
+// the page. Drop every transient command input at that ownership boundary so
+// a held movement, attack, or accumulated pointer delta cannot stick when the
+// player returns. Reset the gesture counters as well: unlike a level load,
+// focus loss must not join clicks or turn acceleration across tabs.
+function resetFocusInput() {
+  // A finale keydown may currently be suspended on its first dynamic import.
+  // Advancing the generation prevents that continuation from adding its key
+  // after this reset; newly dispatched events capture the new generation.
+  _listenerGeneration++;
+  resetLevelInput();
+  AM_ResetControls();
+  turnheld = 0;
+  dclicks = 0;
+  dclickstate = 0;
+  dclicktime = 0;
+  dclicks2 = 0;
+  dclickstate2 = 0;
+  dclicktime2 = 0;
+}
+
+function onWindowBlur() { resetFocusInput(); }
+function onVisibilityChange() {
+  if (document.visibilityState === 'hidden') resetFocusInput();
+}
+
 function installListeners() {
   if (_listenersInstalled) return;
   _listenersInstalled = true;
@@ -263,6 +289,8 @@ function installListeners() {
   document.addEventListener('mousedown', onMouseDown);
   document.addEventListener('mouseup', onMouseUp);
   document.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('blur', onWindowBlur);
+  document.addEventListener('visibilitychange', onVisibilityChange);
   _unregisterShutdownHook = I_RegisterGraphicsShutdownHook(shutdownListeners);
 }
 
@@ -274,6 +302,8 @@ function shutdownListeners() {
     document.removeEventListener('mousedown', onMouseDown);
     document.removeEventListener('mouseup', onMouseUp);
     document.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('blur', onWindowBlur);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
     _listenersInstalled = false;
   }
   if (_unregisterShutdownHook !== null) {

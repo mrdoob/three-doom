@@ -23,7 +23,7 @@ import {
 } from './d_englsh.js';
 import {
   AM_ApplyControlEvent, AM_CreateViewState, AM_FRAME_HEIGHT, AM_FRAME_WIDTH,
-  AM_OpenView, AM_ProjectFixedPoint, AM_TickViewState,
+  AM_OpenView, AM_ProjectFixedPoint, AM_ResetHeldControls, AM_TickViewState,
 } from './am_map_logic.js';
 
 // automapactive is a single engine-wide global in vanilla. Re-export the
@@ -266,6 +266,12 @@ export function AM_Toggle() { if (automapactive) AM_Stop(); else AM_Start(); }
 export function AM_Ticker() {
   if (!automapactive) return;
   _viewState = AM_TickViewState(_viewState, mapPlayer()?.mo ?? null);
+}
+
+// Release browser-owned held controls without closing or repositioning the
+// automap. Used when focus/visibility changes can swallow DOM keyup events.
+export function AM_ResetControls() {
+  _viewState = AM_ResetHeldControls(_viewState);
 }
 
 export function AM_Responder(ev) {

@@ -7,7 +7,7 @@ import { MAXINT } from '../src/doomtype.js';
 import {
   AM_ApplyControlEvent, AM_CalculateLevelBounds, AM_CreateViewState,
   AM_FRAME_HEIGHT, AM_FRAME_WIDTH, AM_INITIAL_SCALE_DIVISOR,
-  AM_PAN_PIXELS, AM_TickViewState, AM_ZOOM_IN, AM_ZOOM_OUT,
+  AM_PAN_PIXELS, AM_ResetHeldControls, AM_TickViewState, AM_ZOOM_IN, AM_ZOOM_OUT,
 } from '../src/am_map_logic.js';
 
 function assertEquals(actual, expected, message) {
@@ -103,6 +103,38 @@ Deno.test('zoom multipliers apply on every ticker and stop on filtering keyup', 
   state = AM_ApplyControlEvent(state, keyEvent(evtype_t.ev_keydown, KEY_EQUALS)).state;
   for (let i = 0; i < 500; i++) state = AM_TickViewState(state, { x: 0, y: 0 });
   assertEquals(state.scaleMtof, state.maxScaleMtof, 'zoom-in upper bound');
+});
+
+Deno.test('automap held-control reset preserves the current view', () => {
+  let state = AM_CreateViewState(rectangleVertices(), { x: 0, y: 0 });
+  state = AM_ApplyControlEvent(state, keyEvent(evtype_t.ev_keydown, 0x66)).state;
+  state = AM_ApplyControlEvent(state, keyEvent(evtype_t.ev_keydown, KEY_RIGHTARROW)).state;
+  state = AM_ApplyControlEvent(state, keyEvent(evtype_t.ev_keydown, KEY_EQUALS)).state;
+  assertEquals(state.panX !== 0, true, 'pan staged');
+  assertEquals(state.zoomMtof !== FRACUNIT, true, 'zoom staged');
+
+  const before = {
+    mX: state.mX,
+    mY: state.mY,
+    mW: state.mW,
+    mH: state.mH,
+    scaleMtof: state.scaleMtof,
+    scaleFtom: state.scaleFtom,
+    followPlayer: state.followPlayer,
+    grid: state.grid,
+  };
+  state = AM_ResetHeldControls(state);
+  assertEquals(state.panX, 0, 'horizontal pan reset');
+  assertEquals(state.panY, 0, 'vertical pan reset');
+  assertEquals(state.zoomMtof, FRACUNIT, 'map-to-frame zoom reset');
+  assertEquals(state.zoomFtom, FRACUNIT, 'frame-to-map zoom reset');
+  for (const [field, expected] of Object.entries(before)) {
+    assertEquals(state[field], expected, `${field} preserved`);
+  }
+
+  const ticked = AM_TickViewState(state, { x: 0, y: 0 });
+  assertEquals(ticked.mX, before.mX, 'reset view does not keep panning');
+  assertEquals(ticked.scaleMtof, before.scaleMtof, 'reset view does not keep zooming');
 });
 
 Deno.test('stationary follow preserves the zoom center until the player moves', () => {

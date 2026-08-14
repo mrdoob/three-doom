@@ -149,6 +149,84 @@ try {
     mouseMove(7, -7);
     const sensitivityMovement = sample();
 
+    // Browsers may omit the matching keyup/mouseup when focus moves to
+    // another window. Blur must clear held keys/buttons, queued Pause, and
+    // pointer axes while keeping the installed adapter ready for new input.
+    key('keydown', 'KeyW', 'w');
+    key('keydown', 'ControlLeft', 'Control');
+    key('keydown', 'Space', ' ');
+    key('keydown', 'Pause', 'Pause');
+    lockedCanvas = canvas;
+    document.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }));
+    mouseMove(11, -7);
+    const heldBeforeBlur = keyboard.D_KeyboardInput.isPressed('KeyW');
+    window.dispatchEvent(new Event('blur'));
+    const afterBlur = sample();
+    const heldAfterBlur = keyboard.D_KeyboardInput.isPressed('KeyW');
+    key('keyup', 'KeyW', 'w');
+    key('keyup', 'ControlLeft', 'Control');
+    key('keyup', 'Space', ' ');
+    key('keyup', 'Pause', 'Pause');
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true, cancelable: true }));
+
+    // Turning accelerates after six tics. A focus boundary starts a new
+    // gesture even if a fresh keydown arrives before any neutral ticcmd.
+    key('keydown', 'ArrowRight', 'ArrowRight');
+    let acceleratedTurn = null;
+    for (let i = 0; i < 7; i++) acceleratedTurn = sample();
+    window.dispatchEvent(new Event('blur'));
+    key('keydown', 'ArrowLeft', 'ArrowLeft');
+    const turnAfterBlur = sample();
+    key('keyup', 'ArrowRight', 'ArrowRight');
+    key('keyup', 'ArrowLeft', 'ArrowLeft');
+
+    // Focus loss also ends a mouse gesture. A click before leaving the page
+    // must not become the first half of a double-click Use after returning.
+    window.dispatchEvent(new Event('blur'));
+    for (let i = 0; i < 3; i++) sample();
+    lockedCanvas = canvas;
+    document.dispatchEvent(new MouseEvent('mousedown', { button: 2, bubbles: true, cancelable: true }));
+    const rightClickBeforeBlur = sample();
+    window.dispatchEvent(new Event('blur'));
+    for (let i = 0; i < 6; i++) sample();
+    document.dispatchEvent(new MouseEvent('mousedown', { button: 2, bubbles: true, cancelable: true }));
+    const rightClickAfterBlur = sample();
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 2, bubbles: true, cancelable: true }));
+
+    // A visible visibilitychange is not an ownership loss. Once hidden, the
+    // same complete reset applies; becoming visible must leave input live.
+    let forcedVisibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => forcedVisibility,
+    });
+    key('keydown', 'KeyW', 'w');
+    document.dispatchEvent(new Event('visibilitychange'));
+    const heldAfterVisibleEvent = keyboard.D_KeyboardInput.isPressed('KeyW');
+    key('keyup', 'KeyW', 'w');
+    sample();
+    key('keydown', 'KeyW', 'w');
+    key('keydown', 'ControlLeft', 'Control');
+    key('keydown', 'Pause', 'Pause');
+    lockedCanvas = canvas;
+    document.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }));
+    mouseMove(13, -9);
+    forcedVisibility = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    const afterHidden = sample();
+    const heldAfterHidden = keyboard.D_KeyboardInput.isPressed('KeyW');
+    key('keyup', 'KeyW', 'w');
+    key('keyup', 'ControlLeft', 'Control');
+    key('keyup', 'Pause', 'Pause');
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true, cancelable: true }));
+    forcedVisibility = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    delete document.visibilityState;
+    key('keydown', 'KeyW', 'w');
+    const listenerAfterVisibility = sample();
+    key('keyup', 'KeyW', 'w');
+    sample();
+
     // Stage every command-building input, including the queued Pause special,
     // then run the real G_DoLoadLevel -> d_main loadLevel path. The new level
     // must start neutral, and its already-installed listener must stay live.
@@ -302,6 +380,17 @@ try {
       sensitivityBefore,
       sensitivityAfter,
       sensitivityMovement,
+      heldBeforeBlur,
+      afterBlur,
+      heldAfterBlur,
+      acceleratedTurn,
+      turnAfterBlur,
+      rightClickBeforeBlur,
+      rightClickAfterBlur,
+      heldAfterVisibleEvent,
+      afterHidden,
+      heldAfterHidden,
+      listenerAfterVisibility,
       afterLevelLoad,
       pausedAfterLevelLoad,
       listenerAfterLevelLoad,
@@ -361,6 +450,38 @@ try {
       result.sensitivityMovement.angleturn !== -48 ||
       result.sensitivityMovement.buttons !== 0) {
     failures.push(`scaled mouse movement mismatch: ${JSON.stringify(result.sensitivityMovement)}`);
+  }
+  if (result.heldBeforeBlur !== true || result.heldAfterBlur !== false ||
+      !zero(result.afterBlur)) {
+    failures.push(`blur retained input: ${JSON.stringify({
+      before: result.heldBeforeBlur,
+      after: result.heldAfterBlur,
+      cmd: result.afterBlur,
+    })}`);
+  }
+  if (result.acceleratedTurn.angleturn !== -640 || result.turnAfterBlur.angleturn !== 320) {
+    failures.push(`blur retained turn acceleration: ${JSON.stringify({
+      before: result.acceleratedTurn,
+      after: result.turnAfterBlur,
+    })}`);
+  }
+  if (result.rightClickBeforeBlur.forwardmove !== 25 ||
+      (result.rightClickBeforeBlur.buttons & 2) !== 0 ||
+      result.rightClickAfterBlur.forwardmove !== 25 ||
+      (result.rightClickAfterBlur.buttons & 2) !== 0) {
+    failures.push(`blur joined separate mouse clicks: ${JSON.stringify({
+      before: result.rightClickBeforeBlur,
+      after: result.rightClickAfterBlur,
+    })}`);
+  }
+  if (result.heldAfterVisibleEvent !== true || result.heldAfterHidden !== false ||
+      !zero(result.afterHidden) || result.listenerAfterVisibility.forwardmove !== 25) {
+    failures.push(`visibility input reset mismatch: ${JSON.stringify({
+      visibleHeld: result.heldAfterVisibleEvent,
+      hiddenHeld: result.heldAfterHidden,
+      hiddenCmd: result.afterHidden,
+      resumedCmd: result.listenerAfterVisibility,
+    })}`);
   }
   if (!zero(result.afterLevelLoad) || result.pausedAfterLevelLoad !== false) {
     failures.push(`level load retained input/pause: ${JSON.stringify({

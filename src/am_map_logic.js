@@ -143,6 +143,19 @@ export function AM_CreateViewState(vertices, player, previous = null) {
   return AM_OpenView(baseState(previous, AM_CalculateLevelBounds(vertices)), player);
 }
 
+// Browser focus can move away without delivering the matching keyup. Keep
+// this reset limited to the automap's held pan/zoom controls so its persistent
+// follow, grid, scale, and window position survive the ownership boundary.
+export function AM_ResetHeldControls(state) {
+  return {
+    ...state,
+    panX: 0,
+    panY: 0,
+    zoomMtof: FRACUNIT,
+    zoomFtom: FRACUNIT,
+  };
+}
+
 // AM_initVariables for reopening the same level: retain the current scale,
 // follow/grid settings and bounds, but clear held controls and center on plr.
 export function AM_OpenView(state, player) {
@@ -150,11 +163,7 @@ export function AM_OpenView(state, player) {
   const playerX = player?.x ?? 0;
   const playerY = player?.y ?? 0;
   let next = {
-    ...state,
-    panX: 0,
-    panY: 0,
-    zoomMtof: FRACUNIT,
-    zoomFtom: FRACUNIT,
+    ...AM_ResetHeldControls(state),
     followOldX: MAXINT,
     followOldY: MAXINT,
     mW: size.w,

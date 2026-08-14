@@ -212,6 +212,36 @@ try {
     automap.AM_Ticker();
     const zoomReleased = capture();
 
+    // A lost keyup must not leave the automap moving after the page loses
+    // ownership. Exercise the two browser boundaries independently: blur for
+    // held pan and hidden visibility for held zoom.
+    key('keydown', 'ArrowRight', 'ArrowRight');
+    const beforeBlurPan = capture();
+    automap.AM_Ticker();
+    const heldPanBeforeBlur = capture();
+    window.dispatchEvent(new Event('blur'));
+    automap.AM_Ticker();
+    const panAfterBlur = capture();
+    key('keyup', 'ArrowRight', 'ArrowRight');
+
+    let forcedVisibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => forcedVisibility,
+    });
+    key('keydown', 'Equal', '=');
+    const beforeHiddenZoom = capture();
+    automap.AM_Ticker();
+    const heldZoomBeforeHidden = capture();
+    forcedVisibility = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    automap.AM_Ticker();
+    const zoomAfterHidden = capture();
+    key('keyup', 'Equal', '=');
+    forcedVisibility = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    delete document.visibilityState;
+
     // 0 saves the current free-map window, shows the whole loaded E1M1 bound,
     // then restores the exact saved window on the second press.
     const beforeBig = capture();
@@ -268,6 +298,14 @@ try {
         JSON.stringify(zoomOnce.geometry) !== JSON.stringify(zoomTwice.geometry),
       zoomStoppedOnRelease:
         JSON.stringify(zoomTwice.geometry) === JSON.stringify(zoomReleased.geometry),
+      panAdvancedBeforeBlur:
+        JSON.stringify(beforeBlurPan.geometry) !== JSON.stringify(heldPanBeforeBlur.geometry),
+      panStoppedOnBlur:
+        JSON.stringify(heldPanBeforeBlur.geometry) === JSON.stringify(panAfterBlur.geometry),
+      zoomAdvancedBeforeHidden:
+        JSON.stringify(beforeHiddenZoom.geometry) !== JSON.stringify(heldZoomBeforeHidden.geometry),
+      zoomStoppedWhenHidden:
+        JSON.stringify(heldZoomBeforeHidden.geometry) === JSON.stringify(zoomAfterHidden.geometry),
       bigChanged: JSON.stringify(beforeBig.geometry) !== JSON.stringify(big.geometry),
       bigRestored: JSON.stringify(beforeBig.geometry) === JSON.stringify(restored.geometry),
       gridOnReady,
@@ -318,6 +356,18 @@ try {
   if (!result.panChanged) failures.push('held arrow did not change the drawn map on AM_Ticker');
   if (!result.zoomChangedEachTic) failures.push('held = did not zoom on each AM_Ticker');
   if (!result.zoomStoppedOnRelease) failures.push('= keyup did not stop zooming');
+  if (!result.panAdvancedBeforeBlur || !result.panStoppedOnBlur) {
+    failures.push(`blur did not stop held automap pan: ${JSON.stringify({
+      advanced: result.panAdvancedBeforeBlur,
+      stopped: result.panStoppedOnBlur,
+    })}`);
+  }
+  if (!result.zoomAdvancedBeforeHidden || !result.zoomStoppedWhenHidden) {
+    failures.push(`hidden page did not stop held automap zoom: ${JSON.stringify({
+      advanced: result.zoomAdvancedBeforeHidden,
+      stopped: result.zoomStoppedWhenHidden,
+    })}`);
+  }
   if (!result.bigChanged || !result.bigRestored) failures.push('0 did not save/show-all/restore E1M1');
   if (!result.gridOnReady || result.gridOnStrokes !== 1) failures.push('G did not enable the grid draw pass');
   if (!result.gridOffReady || result.gridOffStrokes !== 0) failures.push('second G did not disable grid drawing');
