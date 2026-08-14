@@ -1,5 +1,7 @@
 import { GameMode_t } from '../src/doomdef.js';
-import { D_DemoArgumentPlan, D_StartupArgumentPlan } from '../src/d_startup_logic.js';
+import {
+  D_DemoArgumentPlan, D_LoadGameArgumentPlan, D_StartupArgumentPlan,
+} from '../src/d_startup_logic.js';
 
 function assertEquals(actual, expected, message) {
   const a = JSON.stringify(actual);
@@ -133,4 +135,17 @@ Deno.test('demo planning appends .lmp and gives playdemo precedence', () => {
     'explicit extension',
   );
   assertEquals(D_DemoArgumentPlan(['', '-playdemo']), null, 'missing demo name');
+});
+
+Deno.test('startup loadgame accepts only the six browser save slots', () => {
+  assertEquals(D_LoadGameArgumentPlan(['', '-loadgame', '0']), { slot: 0 }, 'first slot');
+  assertEquals(D_LoadGameArgumentPlan(['', '-LOADGAME', '5']), { slot: 5 }, 'last slot');
+  for (const value of ['-1', '6', '1.5', 'bad']) {
+    assertEquals(
+      D_LoadGameArgumentPlan(['', '-loadgame', value]),
+      null,
+      `invalid slot ${value}`,
+    );
+  }
+  assertEquals(D_LoadGameArgumentPlan(['', '-loadgame']), null, 'missing slot');
 });

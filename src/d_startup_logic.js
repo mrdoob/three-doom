@@ -154,3 +154,9 @@ export function D_DemoArgumentPlan(argv) {
   return demoOption(argv, '-playdemo', 'playdemo') ??
     demoOption(argv, '-timedemo', 'timedemo');
 }
+
+export function D_LoadGameArgumentPlan(argv, slotCount = 6) {
+  const slot = integerArgument(argv, '-loadgame');
+  if (slot === null || slot < 0 || slot >= slotCount) return null;
+  return Object.freeze({ slot });
+}

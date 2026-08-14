@@ -63,7 +63,9 @@ import { R_CalculateCanvasView, R_GetViewSize } from './r_view.js';
 import { R_DrawViewBorder } from './r_border.js';
 import { P_FindMapThingType } from './p_mapthing_logic.js';
 import { D_FileArgumentPlan } from './d_file_logic.js';
-import { D_DemoArgumentPlan, D_StartupArgumentPlan } from './d_startup_logic.js';
+import {
+  D_DemoArgumentPlan, D_LoadGameArgumentPlan, D_StartupArgumentPlan,
+} from './d_startup_logic.js';
 import {
   G_EnsurePlayerTopology, G_CollectActivePlayers, G_StagePlayerTiccmds,
   G_ReadDemoTiccmds,
@@ -716,6 +718,7 @@ export async function D_DoomMain() {
   set_startmap(startupPlan.map);
   set_autostart(startupPlan.autostart);
   const demoPlan = D_DemoArgumentPlan(myargv);
+  const loadGamePlan = D_LoadGameArgumentPlan(myargv);
   // d_main.c appends every argument after the first -file until the next
   // option. Fetch them concurrently, but retain argument order so later PWADs
   // win W_CheckNumForName's backwards override search.
@@ -1158,6 +1161,15 @@ export async function D_DoomMain() {
   if (demoPlan !== null) {
     if (demoPlan.kind === 'playdemo') _GGame.G_PlayDemo(demoPlan.lump);
     else _GGame.G_TimeDemo(demoPlan.lump);
+  } else if (loadGamePlan !== null) {
+    // Browser save restoration is synchronous. Consume the queued action now
+    // so a missing/corrupt slot can explicitly fall back to the title instead
+    // of leaving GS_DEMOSCREEN without an owned page.
+    _GGame.G_LoadGame(loadGamePlan.slot);
+    if (_GGame.G_DoLoadGame() !== true) {
+      console.warn(`Unable to load startup save slot ${loadGamePlan.slot}`);
+      D_StartTitle();
+    }
   } else if (startupPlan.autostart) {
     // Native -skill / -episode / -warp and the browser -map alias autostart a
     // real new game after the synchronous level-load hook has been installed.

@@ -107,7 +107,7 @@ async function runCase(query, routeExternal) {
 try {
   browser = await chromium.launch(launchOptions);
   const precedence = await runCase(
-    '?-timedemo=DEMO1&-playdemo=DEMO1&-map=E1M2',
+    '?-timedemo=DEMO1&-playdemo=DEMO1&-loadgame=0&-map=E1M2',
     true,
   );
   const fallback = await runCase('?-timedemo=DEMO1&-map=E1M2', false);
