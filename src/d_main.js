@@ -58,6 +58,7 @@ import { D_PausePatchPosition, D_ShouldStartWipe } from './d_display_logic.js';
 import { R_CalculateCanvasView, R_GetViewSize } from './r_view.js';
 import { R_DrawViewBorder } from './r_border.js';
 import { P_FindMapThingType } from './p_mapthing_logic.js';
+import { D_FileArgumentPlan } from './d_file_logic.js';
 import {
   G_EnsurePlayerTopology, G_CollectActivePlayers, G_StagePlayerTiccmds,
   G_ReadDemoTiccmds,
@@ -657,13 +658,33 @@ async function findIwad() {
 
 async function fetchWad(path, required) {
   console.log('Fetching', path);
-  const r = await fetch(path);
-  if (!r.ok) {
-    if (required) I_Error('Failed to load ' + path + ': ' + r.status);
+  let response;
+  try {
+    response = await fetch(path);
+  } catch (error) {
+    if (required) {
+      I_Error('Failed to load ' + path + ': ' + (error?.message ?? error));
+    }
+    // A command-line -file is optional in W_AddFile. Network failures are the
+    // browser equivalent of fopen returning -1: report it and keep trying the
+    // remaining ordered overlays.
+    console.warn('Skipping unavailable WAD', path, '(' + (error?.message ?? error) + ')');
     return null;
   }
-  const buffer = await r.arrayBuffer();
-  return { name: path, buffer };
+  if (!response.ok) {
+    if (required) I_Error('Failed to load ' + path + ': ' + response.status);
+    console.warn('Skipping unavailable WAD', path, '(' + response.status + ')');
+    return null;
+  }
+  try {
+    return { name: path, buffer: await response.arrayBuffer() };
+  } catch (error) {
+    if (required) {
+      I_Error('Failed to read ' + path + ': ' + (error?.message ?? error));
+    }
+    console.warn('Skipping unreadable WAD', path, '(' + (error?.message ?? error) + ')');
+    return null;
+  }
 }
 
 // ---------- D_DoomMain ----------
@@ -684,7 +705,24 @@ export async function D_DoomMain() {
     I_Error('Unable to determine IWAD game mode: no MAP01 or ExM1 map marker found');
   }
   set_gamemode(detectedMode);
-  W_InitMultipleFiles([{ name: iwad.name, buffer: iwad.buffer }]);
+  // d_main.c appends every argument after the first -file until the next
+  // option. Fetch them concurrently, but retain argument order so later PWADs
+  // win W_CheckNumForName's backwards override search.
+  const filePlan = D_FileArgumentPlan(myargv);
+  // W_AddFile treats command-line additions as optional: an unavailable PWAD
+  // is reported and skipped without preventing later overlays from loading.
+  const overlayResults = await Promise.all(
+    filePlan.paths.map((path) => fetchWad(path, false)),
+  );
+  const overlays = overlayResults.filter((wad) => wad !== null);
+  // The 1993 executable rejected every -file with the shareware IWAD. The
+  // browser deliberately permits overlays: they cannot manufacture absent
+  // registered assets, and this keeps custom E1 maps usable with doom1.wad.
+  doomstat.set_modifiedgame(filePlan.present);
+  W_InitMultipleFiles([
+    { name: iwad.name, buffer: iwad.buffer },
+    ...overlays.map((wad) => ({ name: wad.name, buffer: wad.buffer })),
+  ]);
 
   // m_misc.c:M_LoadDefaults resets and loads every registered binding before
   // the settings are consumed by graphics or input initialization.

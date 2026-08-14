@@ -67,7 +67,11 @@ function W_AddFile(filename, buffer) {
   let fileinfo;
 
   // Detect WAD vs single-lump by extension.
-  const ext = filename.slice(-3).toLowerCase();
+  // Browser asset URLs may carry cache-busting query strings or fragments;
+  // classify the pathname, not the raw fetch URL suffix.
+  const suffix = filename.search(/[?#]/);
+  const assetPath = suffix < 0 ? filename : filename.slice(0, suffix);
+  const ext = assetPath.slice(-3).toLowerCase();
   if (ext !== 'wad') {
     fileinfo = [{ filepos: 0, size: buffer.byteLength, name: extractFileBase(filename) }];
     numlumps++;
@@ -112,6 +116,7 @@ function W_AddFile(filename, buffer) {
 export function W_InitMultipleFiles(filespecs) {
   numlumps = 0;
   lumpinfo = [];
+  _fileBuffers.length = 0;
 
   for (const spec of filespecs) {
     W_AddFile(spec.name, spec.buffer);

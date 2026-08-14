@@ -10,8 +10,8 @@ import * as THREE from 'three';
 import { spritedef_t, spriteframe_t } from './r_defs.js';
 import { sprnames, states } from './info.js';
 import { firstspritelump, lastspritelump } from './r_data.js';
-import { W_CacheLumpNum } from './w_wad.js';
-import { lumpinfo } from './w_wad.js';
+import { modifiedgame } from './doomstat.js';
+import { W_CacheLumpNum, W_GetNumForName, lumpinfo } from './w_wad.js';
 import { I_Error } from './i_system.js';
 import { FRACUNIT } from './m_fixed.js';
 import { patch_t } from './v_video.js';
@@ -77,11 +77,18 @@ export function R_InitSpriteDefs(namelist) {
       if (lname.slice(0, 4) === namelist[i]) {
         const frame    = lname.charCodeAt(4) - 65; // 'A'
         const rotation = lname.charCodeAt(5) - 48; // '0'
-        R_InstallSpriteLump(l, frame, rotation, false);
+        // Native scans only the sprite namespace delimited by S_START/S_END.
+        // In a modified game, resolve each discovered name through the full
+        // directory so a later standalone `-file TROOA1.lmp` can replace it.
+        const patched = modifiedgame ? W_GetNumForName(lname) : l;
+        R_InstallSpriteLump(patched, frame, rotation, false);
         if (lname.length > 6 && lname.charCodeAt(6) !== 0) {
           const frame2    = lname.charCodeAt(6) - 65;
           const rotation2 = lname.charCodeAt(7) - 48;
-          R_InstallSpriteLump(l, frame2, rotation2, true);
+          // The same patch supplies both encoded frame/rotation aliases. The
+          // Linux source accidentally used the IWAD lump for this second one;
+          // keep both aliases on the resolved replacement.
+          R_InstallSpriteLump(patched, frame2, rotation2, true);
         }
       }
     }
