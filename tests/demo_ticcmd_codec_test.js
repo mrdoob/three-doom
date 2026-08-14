@@ -1,7 +1,9 @@
 import {
+  DEMO_MARKER,
   G_DecodeDemoTiccmd,
   G_DemoCanWriteTiccmd,
   G_EncodeDemoTiccmd,
+  G_ValidateDemoStream,
 } from '../src/g_demo.js';
 
 function assertEquals(actual, expected, message) {
@@ -61,4 +63,37 @@ Deno.test('demo capacity preserves the reference sixteen-byte tail reserve', () 
   assertEquals(G_DemoCanWriteTiccmd(14, 29), false, 'first byte beyond boundary');
   assertEquals(G_DemoCanWriteTiccmd(0x1fff0, 0x20000), true, 'default final start');
   assertEquals(G_DemoCanWriteTiccmd(0x1fff1, 0x20000), false, 'default overflow');
+});
+
+Deno.test('demo validation rejects malformed streams before level setup', () => {
+  const header = [109, 2, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+  const valid = G_ValidateDemoStream([...header, 1, 2, 3, 4, DEMO_MARKER]);
+  assertEquals(valid.valid, true, 'valid stream');
+  assertEquals(valid.commandOffset, 13, 'command offset');
+  assertEquals(valid.markerOffset, 17, 'marker offset');
+  assertEquals(valid.header.skill, 2, 'skill');
+  assertEquals(valid.header.playeringame[0], true, 'console topology');
+
+  const cases = [
+    { bytes: header.slice(0, 12), error: 'header is shorter than 13 bytes' },
+    {
+      bytes: [108, ...header.slice(1), DEMO_MARKER],
+      error: 'version 108 does not match engine 109',
+    },
+    {
+      bytes: [...header.slice(0, 9), 0, 0, 0, 0, DEMO_MARKER],
+      error: 'header has no active players',
+    },
+    {
+      bytes: [...header.slice(0, 8), 2, 1, 0, 0, 0, DEMO_MARKER],
+      error: 'console player 2 is not active',
+    },
+    { bytes: header, error: 'stream has no end marker' },
+    { bytes: [...header, 1, 2, 3], error: 'ticcmd at byte 13 is truncated' },
+  ];
+  for (const test of cases) {
+    const result = G_ValidateDemoStream(test.bytes);
+    assertEquals(result.valid, false, test.error);
+    assertEquals(result.error, test.error, test.error);
+  }
 });

@@ -26,9 +26,12 @@ import { F_ShouldStartCommercialFinale } from './f_finale_logic.js';
 import { G_SecretExitAvailable } from './g_game_logic.js';
 import {
   DEMO_DEFAULT_BUFFER_SIZE,
+  DEMO_MARKER,
+  DEMO_VERSION,
   G_DecodeDemoTiccmd,
   G_DemoCanWriteTiccmd,
   G_EncodeDemoTiccmd,
+  G_ValidateDemoStream,
 } from './g_demo.js';
 import { G_BeginTimeDemoSample, G_CompleteTimeDemoSample } from './g_timedemo.js';
 import { I_Error, I_GetTime } from './i_system.js';
@@ -412,9 +415,7 @@ export function G_InitNew(skill, episode, map) {
 // G_CheckDemoStatus. The lump format is:
 //   [VERSION, skill, episode, map, deathmatch, respawnparm, fastparm,
 //    nomonsters, consoleplayer, playeringame[0..3],
-//    {forwardmove, sidemove, angleturn>>8, buttons}* , DEMOMARKER(0x80)]
-const DEMOMARKER = 0x80;
-const DEMO_VERSION = 109; // Doom v1.9 — what the shareware DEMO1..3 lumps were recorded as.
+//    {forwardmove, sidemove, angleturn>>8, buttons}* , DEMO_MARKER(0x80)]
 
 let _demoBytes = null;
 let _demoPos = 0;
@@ -440,9 +441,11 @@ export function G_DeferedPlayDemo(nameOrBytes) {
 export function G_DoPlayDemo() {
   if (_deferred === null || _deferred.kind !== 'playdemo') return;
   set_gameaction(gameaction_t.ga_nothing);
+  const pending = _deferred;
+  _deferred = null;
   let bytes;
-  if (typeof _deferred.source === 'string') {
-    _demoName = _deferred.source;
+  if (typeof pending.source === 'string') {
+    _demoName = pending.source;
     if (typeof globalThis.__W_CacheLumpName === 'function') {
       bytes = globalThis.__W_CacheLumpName(_demoName);
     } else {
@@ -452,45 +455,48 @@ export function G_DoPlayDemo() {
     }
   } else {
     _demoName = '';
-    bytes = _deferred.source;
+    bytes = pending.source;
   }
-  if (bytes === null || bytes === undefined || bytes.length < 13) {
+  const validation = G_ValidateDemoStream(bytes);
+  if (validation.valid !== true) {
+    console.warn(`Demo ${_demoName || '<memory>'} is invalid: ${validation.error}`);
+    _demoBytes = null;
+    _demoPos = 0;
     G_CancelPendingTimeDemo();
     doomstat.set_singledemo(false);
-    return;
+    if (_onDemoEnd !== null) _onDemoEnd();
+    return false;
   }
   _demoBytes = bytes;
-  _demoPos = 0;
-  // Header: skip & validate VERSION byte (vanilla bails on mismatch).
-  const v = _demoBytes[_demoPos++];
-  if (v !== DEMO_VERSION) {
-    console.warn(`Demo ${_demoName} version ${v} != engine ${DEMO_VERSION}; aborting.`);
-    _demoBytes = null;
-    G_CancelPendingTimeDemo();
-    doomstat.set_singledemo(false);
-    return;
-  }
-  const skill   = _demoBytes[_demoPos++];
-  const episode = _demoBytes[_demoPos++];
-  const map     = _demoBytes[_demoPos++];
-  doomstat.set_deathmatch(_demoBytes[_demoPos++]);
-  doomstat.set_respawnparm(_demoBytes[_demoPos++] !== 0);
-  doomstat.set_fastparm(_demoBytes[_demoPos++] !== 0);
-  doomstat.set_nomonsters(_demoBytes[_demoPos++] !== 0);
-  doomstat.set_consoleplayer(_demoBytes[_demoPos++]);
+  _demoPos = validation.commandOffset;
+  const header = validation.header;
+  doomstat.set_deathmatch(header.deathmatch);
+  doomstat.set_respawnparm(header.respawn);
+  doomstat.set_fastparm(header.fast);
+  doomstat.set_nomonsters(header.nomonsters);
+  doomstat.set_consoleplayer(header.consoleplayer);
   for (let i = 0; i < MAXPLAYERS; i++) {
-    playeringame[i] = _demoBytes[_demoPos++] !== 0;
+    playeringame[i] = header.playeringame[i];
   }
   doomstat.set_netgame(playeringame[1] === true);
-  G_InitNew(skill, episode, map);
+  G_InitNew(header.skill, header.episode, header.map);
   G_DoLoadLevel();
   doomstat.set_usergame(false);
   doomstat.set_demoplayback(true);
+  return true;
 }
 
 export function G_ReadDemoTiccmd(cmd) {
   if (!doomstat.demoplayback || _demoBytes === null) return false;
-  if (_demoBytes[_demoPos] === DEMOMARKER) { G_CheckDemoStatus(); return false; }
+  if (_demoPos < _demoBytes.length && _demoBytes[_demoPos] === DEMO_MARKER) {
+    G_CheckDemoStatus();
+    return false;
+  }
+  if (_demoPos >= _demoBytes.length || _demoPos + 4 > _demoBytes.length) {
+    console.warn(`Demo ${_demoName || '<memory>'} ended with a truncated ticcmd`);
+    G_CheckDemoStatus('truncated');
+    return false;
+  }
   _demoPos = G_DecodeDemoTiccmd(_demoBytes, _demoPos, cmd);
   return true;
 }
@@ -583,7 +589,7 @@ function G_FinalizeDemoRecording(reason = 'status') {
   doomstat.set_demorecording(false);
   const buffer = _recordBuf;
   _recordBuf = null;
-  buffer.push(DEMOMARKER);
+  buffer.push(DEMO_MARKER);
   const normalizedReason = ['manual', 'quit', 'overflow', 'replaced'].includes(reason)
     ? reason
     : 'status';

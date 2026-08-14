@@ -65,6 +65,7 @@ import { D_FileArgumentPlan } from './d_file_logic.js';
 import {
   D_DemoArgumentPlan, D_LoadGameArgumentPlan, D_StartupArgumentPlan,
 } from './d_startup_logic.js';
+import { G_ValidateDemoStream } from './g_demo.js';
 import {
   G_EnsurePlayerTopology, G_CollectActivePlayers, G_StagePlayerTiccmds,
   G_ReadDemoTiccmds,
@@ -747,6 +748,12 @@ export async function D_DoomMain() {
   // of leaving a queued demo on an empty demo screen.
   if (demoPlan !== null && W_CheckNumForName(demoPlan.lump) < 0) {
     I_Error(`Demo ${demoPlan.argument} not found`);
+  }
+  if (demoPlan !== null) {
+    const validation = G_ValidateDemoStream(W_CacheLumpName(demoPlan.lump, 0));
+    if (validation.valid !== true) {
+      I_Error(`Demo ${demoPlan.argument} is invalid: ${validation.error}`);
+    }
   }
 
   // m_misc.c:M_LoadDefaults resets and loads every registered binding before

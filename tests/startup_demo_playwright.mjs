@@ -104,6 +104,34 @@ async function runCase(query, routeExternal) {
   return { ...result, pageErrors };
 }
 
+async function runInvalidCase() {
+  const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.route('**/DEMO1.lmp', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/octet-stream',
+    // Valid v1.9 header and one complete command, deliberately without the
+    // required marker. Startup must reject it before entering the RAF loop.
+    body: Buffer.from([109, 2, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 2, 3, 4]),
+  }));
+  const expected = 'Demo DEMO1 is invalid: stream has no end marker';
+  const startupError = page.waitForEvent('console', {
+    predicate: (message) => message.text().includes(expected),
+    timeout: 10000,
+  });
+  const url = new URL(process.env.DOOM_URL ?? 'http://127.0.0.1:8095/');
+  url.search = '?-playdemo=DEMO1';
+  await page.goto(url.href, { waitUntil: 'domcontentloaded' });
+  const message = await startupError;
+  const lifecycle = await page.evaluate(async () => ({
+    rendererCreated: window.renderer !== undefined,
+    rafRunning: (await import('/src/d_loop.js')).D_DoomRafLoop.isRunning(),
+  }));
+  await page.close();
+  return { message: message.text(), pageErrors, expected, lifecycle };
+}
+
 try {
   browser = await chromium.launch(launchOptions);
   const precedence = await runCase(
@@ -111,6 +139,7 @@ try {
     true,
   );
   const fallback = await runCase('?-timedemo=DEMO1&-map=E1M2', false);
+  const invalid = await runInvalidCase();
 
   assert(precedence.demoplayback && precedence.singledemo,
     `external playdemo did not start: ${JSON.stringify(precedence)}`);
@@ -128,8 +157,11 @@ try {
   `IWAD timedemo flags are wrong: ${JSON.stringify(fallback)}`);
   assert(precedence.pageErrors.length === 0 && fallback.pageErrors.length === 0,
     `page errors: ${[...precedence.pageErrors, ...fallback.pageErrors].join('; ')}`);
+  assert(invalid.message.includes(invalid.expected) && invalid.pageErrors.length === 0 &&
+    !invalid.lifecycle.rendererCreated && !invalid.lifecycle.rafRunning,
+    `malformed startup demo was not rejected cleanly: ${JSON.stringify(invalid)}`);
 
-  console.log(JSON.stringify({ precedence, fallback }));
+  console.log(JSON.stringify({ precedence, fallback, invalid }));
 } finally {
   if (browser !== null) await browser.close();
   clearTimeout(watchdog);
